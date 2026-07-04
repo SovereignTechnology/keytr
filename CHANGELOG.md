@@ -4,6 +4,40 @@ All notable changes to this project will be documented in this file.
 
 This project follows [Semantic Versioning](https://semver.org/).
 
+## [0.8.0] - 2026-07-03
+
+**PRF is now the only registration mode. Key-in-Handle (KiH) registration has been removed.**
+
+### Security
+- **KiH key material was interceptable in JavaScript.** In KiH mode the 32-byte AES key was stored in the passkey `user.id` and returned to the page as `userHandle` on every login. Any script running in the page's origin (via XSS, a malicious browser extension, or a compromised dependency) could read that key material during a login/registration and decrypt the user's public `kind:31777` (`v=3`) blob offline. This is **not** exploitable from relay data alone — a genuine build never publishes key material — and requires code execution on the victim's page. PRF mode keeps the key inside the authenticator, eliminating this interception vector (note: the decrypted nsec is still returned to the app, so a compromised page can always read the key once decrypted — see SECURITY.md).
+- All WebAuthn calls route through native references captured at import time (`natives.ts`), and key buffers are zeroed via prototype-pollution-resistant helpers (`builtins.ts`).
+
+### Breaking
+- **KiH registration removed.** `kihStrategy.register()` throws `KihRegistrationDisabledError`. `generateUserId()` was removed. The PRF strategy (`prfStrategy`) is the default for `setup`, `setupKeytr`, `addBackupGateway`, `discover`, and `loginWithKeytr`.
+- **PRF-only, no fallback.** Authenticators without PRF (password-manager extensions, Firefox Android, some older security keys) now fail registration with `PrfNotSupportedError`. There is no password/local fallback.
+- `KEYTR_VERSION` is now `1` (PRF). Legacy KiH is `KEYTR_KIH_VERSION` (`3`). Bare `encryptNsec`/`decryptNsec`/`buildAad` calls that omit `version` now default to `1`; pass `version: KEYTR_KIH_VERSION` for legacy blobs.
+- `RegisterOptions.pubkey` (hex, stored as `user.id`) is required again for the low-level `registerPasskey`. The high-level helpers derive and thread it for you.
+- Constants `KEY_SIZE`/`USER_ID_SIZE`/`MODE_BYTE` renamed to `KIH_KEY_SIZE`/`KIH_USER_ID_SIZE`/`KIH_MODE_BYTE`.
+
+### Added
+- **`migrateFromKih()`** — logs in with an existing KiH passkey, re-encrypts the nsec under a new PRF passkey, publishes the new `v=1` event, then publishes a NIP-09 `kind:5` deletion (`a` tag `31777:<pubkey>:<d-tag>`) to retire the old KiH event.
+- **`buildKeytrDeletionEvent()`** — NIP-09 deletion builder for `kind:31777` events. `DELETION_EVENT_KIND` constant.
+- Restored PRF pipeline: `prfStrategy`, `checkPrfSupport()`, `PrfNotSupportedError`, `prfRegistrationExtension`/`prfAuthenticationExtension`/`extractPrfOutput`/`isPrfEnabled`, the two-ceremony Safari-safe discover, and the YubiKey create→get fallback with Signal-API orphan cleanup.
+- `detectMode()`, `DiscoverResult.mode`, `KeytrCredential.prfSupported`, `PRF_USER_ID_SIZE`.
+
+### Deprecated
+- **KiH decryption** (`kihStrategy`, `kihAuthenticatePasskey`, `v=3` event support) — retained so existing users can log in and migrate; scheduled for removal in a future release. Migrate now with `migrateFromKih()`.
+
+## [0.7.1] - 2026-04-06
+
+### Security
+- **Hardened KiH key material against JS-level interception** — cache `navigator.credentials.create/get` and `Uint8Array.prototype` methods at module load to resist monkey-patching (POC-1) and prototype pollution (POC-3).
+
+## [0.7.0] - 2026-04-06
+
+### Changed
+- **Removed PRF mode; added the pluggable `KeyStrategy` interface.** KiH became the sole built-in strategy. (Superseded by 0.8.0, which restores PRF as the default and deprecates KiH.)
+
 ## [0.6.3] - 2026-04-06
 
 ### Fixed

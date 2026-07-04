@@ -1,26 +1,43 @@
 # keytr Roadmap
 
-## Current State: NIP-K1 (v0.6.0)
+## Current State: NIP-K1 (v0.8.0)
 
 keytr implements NIP-K1 — passkey-encrypted private keys. A user's nsec is encrypted with a passkey and published to Nostr relays as a kind:31777 event. Any device with the synced passkey can decrypt it in one biometric tap.
 
 **What's shipping today:**
 - Full NIP-K1 implementation (encrypt, decrypt, event publish/fetch)
-- **Two encryption modes**: PRF (hardware-bound key) and KiH (key-in-handle, universal compatibility)
-- **Unified API**: `setup()` tries PRF first, falls back to KiH; `discover()` auto-detects mode
-- **Password manager support**: 1Password and Bitwarden now support PRF; Dashlane PRF in beta; all work via KiH fallback
-- Discoverable login (no prior pubkey needed)
+- **PRF-only registration**: `prfStrategy` (the default) is the one and only registration mode — the encryption key is the authenticator's PRF output, never stored in `user.id`; the raw pubkey goes in `user.id` for discoverable login (AAD/event `v=1`)
+- **No fallback**: authenticators without PRF cannot register — `setup()` throws `PrfNotSupportedError`. There is no password or local fallback. This is a deliberate compatibility trade-off (Firefox Android, older security keys, and some password-manager extensions can no longer register)
+- **KiH is legacy + decrypt-only**: `kihStrategy.register()` throws `KihRegistrationDisabledError`; existing KiH (`v=3`) credentials can still log in via `discover()`/`loginWithKeytr()` and should migrate
+- **Migration**: `migrateFromKih()` logs in with the old KiH passkey, re-encrypts under a new PRF passkey, publishes the new `v=1` event, then publishes a NIP-09 `kind:5` deletion to retire the old KiH event
+- **Pluggable `KeyStrategy` interface**: `setup()`/`discover()`/`loginWithKeytr()` accept a custom `strategy`; `prfStrategy` and `kihStrategy` are the built-ins
+- **Security hardening**: WebAuthn calls route through native references cached at import (`natives.ts`, resists monkey-patching); buffer ops use cached prototype methods and zero key material via `safeZero()` (`builtins.ts`, resists prototype pollution)
+- **Discoverable login** (no prior pubkey needed); PRF login runs two ceremonies (up to two prompts on Safari), legacy KiH stays one
 - Parallel relay operations
 - Cross-gateway support via Related Origin Requests
-- YubiKey compatibility (PRF assertion fallback)
+- YubiKey compatibility (PRF assertion fallback on registration)
 - Federated gateways: keytr.org + nostkey.org
-- **Comprehensive capability detection** via `checkCapabilities()` (`getClientCapabilities()` on Chrome 132+, feature detection fallback)
+- **Comprehensive capability detection** via `checkCapabilities()` (`getClientCapabilities()` on Chrome 132+, feature detection fallback); `checkPrfSupport()` restored for gating the passkey UI
 - **Conditional UI** (passkey autofill) via `mediation: 'conditional'` option
 - **WebAuthn Signal API** for credential lifecycle management (`signalUnknownCredential`, `signalAllAcceptedCredentialIds`, `signalCurrentUserDetails`)
 - **Backup eligibility flags** (BE/BS from `authenticatorData`) on `KeytrCredential`
 - **WebAuthn Level 3 hints** parameter for authenticator routing
 - **SSR safety** — all WebAuthn functions throw early in non-browser environments
 - **user.id truncation detection** — clear errors when authenticators truncate the userHandle
+
+---
+
+## Next Breaking Change: Remove KiH Decryption
+
+**Status**: Planned
+
+KiH registration was removed in v0.8.0; KiH decryption remains only as a migration on-ramp. The next planned breaking milestone removes the KiH decrypt path entirely:
+
+- Delete `kihStrategy`, `kihAuthenticatePasskey`, the KiH helpers (`detectMode`/`extractKey`), and the `v=3` branch in `loginWithKeytr()`/`discover()`.
+- Remove the KiH constants (`KIH_KEY_SIZE`, `KIH_USER_ID_SIZE`, `KIH_MODE_BYTE`) and the KiH decrypt spec from NIP-K1 (leaving only PRF `v=1`).
+- After this release, unmigrated `v=3` events become unreadable by keytr.
+
+**Before it lands:** clients should surface `migrateFromKih()` to any user still on a `v=3` credential (see the [integration guide](integration-guide.md#migrating-legacy-kih-users)). A deprecation window will run first so users can migrate; the exact release is TBD and will be called out in the changelog.
 
 ---
 

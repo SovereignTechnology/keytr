@@ -5,19 +5,25 @@ import { randomBytes } from '@noble/hashes/utils.js'
 import { KEYTR_VERSION } from '../../src/types.js'
 
 describe('buildAad', () => {
-  it('uses version 3 by default', () => {
+  it('uses KEYTR_VERSION (1, PRF) by default', () => {
     const credId = new Uint8Array([0xaa, 0xbb])
     const aad = buildAad(credId)
     // 'keytr' (5) + version (1) + credId (2) = 8 bytes
     expect(aad.length).toBe(8)
-    expect(aad[5]).toBe(KEYTR_VERSION) // version byte = 3
+    expect(aad[5]).toBe(KEYTR_VERSION) // default PRF version byte = 1
+    expect(KEYTR_VERSION).toBe(1)
   })
 
-  it('accepts custom version', () => {
+  it('accepts a custom version (e.g. 3 for legacy KiH)', () => {
     const credId = new Uint8Array([0xaa, 0xbb])
-    const aad = buildAad(credId, 1)
+    const aad = buildAad(credId, 3)
     expect(aad.length).toBe(8)
-    expect(aad[5]).toBe(1)
+    expect(aad[5]).toBe(3)
+  })
+
+  it('produces different AAD for PRF (1) vs KiH (3) — cross-mode isolation', () => {
+    const credId = new Uint8Array([0xaa, 0xbb])
+    expect(buildAad(credId, 1)).not.toEqual(buildAad(credId, 3))
   })
 })
 

@@ -1,30 +1,47 @@
-export type { KeytrCredential, EncryptedNsecBlob, KeytrEventTemplate, EncryptOptions, DecryptOptions, RegisterOptions, RegisterResult, AuthenticateOptions, DiscoverOptions, DiscoverResult, KeytrBundle, KeyStrategy, WebAuthnCapabilities, } from './types.js';
-export { KEYTR_VERSION, BLOB_VERSION, KEYTR_EVENT_KIND, DEFAULT_RP_ID, DEFAULT_RP_NAME, KEYTR_GATEWAYS, KEY_SIZE, USER_ID_SIZE, MODE_BYTE, } from './types.js';
-export { KeytrError, EncryptionError, DecryptionError, BlobParseError, WebAuthnError, RelayError, } from './errors.js';
+export type { KeytrCredential, EncryptedNsecBlob, KeytrEventTemplate, EncryptOptions, DecryptOptions, RegisterOptions, RegisterResult, AuthenticateOptions, DiscoverOptions, DiscoverResult, KeytrBundle, KeyStrategy, KeytrMode, PrfSupportInfo, WebAuthnCapabilities, } from './types.js';
+export { KEYTR_VERSION, KEYTR_KIH_VERSION, BLOB_VERSION, KEYTR_EVENT_KIND, DELETION_EVENT_KIND, DEFAULT_RP_ID, DEFAULT_RP_NAME, KEYTR_GATEWAYS, KIH_KEY_SIZE, KIH_USER_ID_SIZE, KIH_MODE_BYTE, PRF_USER_ID_SIZE, } from './types.js';
+export { KeytrError, PrfNotSupportedError, KihRegistrationDisabledError, EncryptionError, DecryptionError, BlobParseError, WebAuthnError, RelayError, } from './errors.js';
 export { encryptNsec, buildAad } from './crypto/encrypt.js';
 export { decryptNsec } from './crypto/decrypt.js';
 export { deriveKey } from './crypto/kdf.js';
 export { serializeBlob, deserializeBlob } from './crypto/blob.js';
-export { checkCapabilities, ensureBrowser } from './webauthn/support.js';
+export { checkCapabilities, checkPrfSupport, ensureBrowser } from './webauthn/support.js';
 export { registerPasskey } from './webauthn/register.js';
-export { authenticatePasskey, discoverPasskey } from './webauthn/authenticate.js';
-export { generateUserId, extractKey } from './webauthn/kih.js';
+export { authenticatePasskey, kihAuthenticatePasskey, discoverPasskey } from './webauthn/authenticate.js';
+export { prfRegistrationExtension, prfAuthenticationExtension, extractPrfOutput, isPrfEnabled, } from './webauthn/prf.js';
+export { extractKey, detectMode } from './webauthn/kih.js';
 export { parseBackupFlags } from './webauthn/flags.js';
 export { signalUnknownCredential, signalAllAcceptedCredentialIds, signalCurrentUserDetails, } from './webauthn/signal.js';
 export { generateNsec, nsecToPublicKey, encodeNsec, decodeNsec, encodeNpub, decodeNpub, nsecToNpub, nsecToHexPubkey, } from './nostr/keys.js';
-export { buildKeytrEvent, parseKeytrEvent, type ParsedKeytrEvent } from './nostr/event.js';
+export { buildKeytrEvent, parseKeytrEvent, buildKeytrDeletionEvent, type ParsedKeytrEvent, type DeletionEventTemplate, } from './nostr/event.js';
 export { publishKeytrEvent, fetchKeytrEvents, fetchKeytrEventByDTag, type RelayOptions } from './nostr/relay.js';
+export { migrateFromKih, type MigrateOptions, type MigrateResult } from './migrate.js';
 import type { RegisterOptions, DiscoverOptions, KeytrBundle, KeyStrategy } from './types.js';
 import type { RelayOptions } from './nostr/relay.js';
-/** Built-in KiH (Key-in-Handle) strategy — the default */
+/**
+ * Built-in PRF strategy — the default.
+ *
+ * The encryption key is the authenticator's PRF output; it is never stored in
+ * user.id. Requires a PRF-capable authenticator. AAD/event version = 1.
+ */
+export declare const prfStrategy: KeyStrategy;
+/**
+ * Legacy Key-in-Handle (KiH) strategy — DECRYPT-ONLY.
+ *
+ * Registration is disabled (it throws) because the key stored in user.id is
+ * interceptable in JS memory. `authenticate`/`discover` remain so existing KiH
+ * credentials can log in and migrate. AAD/event version = 3. Removed in a
+ * future release.
+ */
 export declare const kihStrategy: KeyStrategy;
 /**
  * Full registration flow: generate nsec, create passkey, encrypt, build event.
  *
  * This is the "setup" flow for a new user or adding a new passkey.
- * Single biometric prompt — the encryption key is embedded in the passkey's user.id.
+ * Uses the PRF strategy by default — a single passkey, key derived by the
+ * authenticator (never in user.id).
  */
-export declare function setupKeytr(options: RegisterOptions & {
+export declare function setupKeytr(options: Omit<RegisterOptions, 'pubkey'> & {
     clientName?: string;
     strategy?: KeyStrategy;
 }): Promise<KeytrBundle & {
@@ -37,16 +54,17 @@ export declare function setupKeytr(options: RegisterOptions & {
  * Call this separately from setupKeytr() — each call triggers one biometric
  * prompt. The user decides when (or if) to add backup gateways.
  */
-export declare function addBackupGateway(nsecBytes: Uint8Array, options: RegisterOptions & {
+export declare function addBackupGateway(nsecBytes: Uint8Array, options: Omit<RegisterOptions, 'pubkey'> & {
     clientName?: string;
     strategy?: KeyStrategy;
 }): Promise<KeytrBundle>;
 /**
  * Full login flow: try each event's passkey until one succeeds.
  *
- * Pass all kind:31777 events for this user. The function tries each
- * event in order — the first passkey the authenticator recognises wins.
- * The encryption key is extracted from the passkey's userHandle.
+ * Pass all kind:31777 events for this user. Each event is dispatched by its
+ * `v` tag: v=1 authenticates with PRF, v=3 with the legacy KiH path. The first
+ * passkey the authenticator recognises wins. Pass an explicit `strategy` to
+ * override dispatch with a custom strategy.
  */
 export declare function loginWithKeytr(events: {
     kind: number;
@@ -66,7 +84,7 @@ export interface SetupOptions {
     timeout?: number;
     /** WebAuthn Level 3 hints to guide authenticator selection */
     hints?: string[];
-    /** Key derivation strategy. Defaults to kihStrategy (Key-in-Handle). */
+    /** Key derivation strategy. Defaults to prfStrategy (PRF). */
     strategy?: KeyStrategy;
 }
 /** Result of the unified setup flow */
@@ -77,9 +95,11 @@ export interface SetupResult extends KeytrBundle {
 /**
  * Setup: generate nsec, register passkey, encrypt, build event.
  *
- * The encryption key is embedded in the passkey's user.id (33 bytes, 0x03 prefix).
- * Works with all authenticators including password manager extensions.
- * Single biometric prompt.
+ * Uses the PRF strategy by default: the encryption key is derived by the
+ * authenticator (never stored in user.id) and the raw pubkey is written to
+ * user.id for discoverable login. Single biometric prompt (a follow-up
+ * assertion may run on authenticators that only return PRF output on
+ * assertion). Throws PrfNotSupportedError when PRF is unavailable.
  */
 export declare function setup(options: SetupOptions): Promise<SetupResult>;
 /** Result of the discover flow */
@@ -90,9 +110,12 @@ export interface DiscoverLoginResult {
 }
 /**
  * Discoverable login: browser shows available passkeys, user picks one,
- * we extract the encryption key from userHandle, fetch the event, and decrypt.
+ * we obtain the key material, fetch the event, and decrypt.
  *
- * Single biometric prompt. No prior knowledge of the user needed.
+ * Works for both PRF (current) and legacy KiH credentials — the strategy's
+ * unified discover detects which. Single biometric prompt for KiH; PRF adds a
+ * targeted follow-up assertion. The blob is decrypted with the event's own
+ * version tag.
  */
 export declare function discover(relays: string[], options?: DiscoverOptions & {
     relayOptions?: RelayOptions;

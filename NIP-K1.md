@@ -22,7 +22,7 @@ The result: a user taps their fingerprint once to set up, and taps again on any 
 - **passkey**: A WebAuthn discoverable credential, typically backed by a platform authenticator and synced across devices.
 - **PRF**: The WebAuthn Pseudo-Random Function extension (`prf`). It evaluates an HMAC inside the authenticator, producing a deterministic 32-byte secret bound to the credential and input salt. The secret never leaves the authenticator hardware.
 - **gateway**: A WebAuthn Relying Party (`rpId`) that multiple independent clients share via Related Origin Requests (`.well-known/webauthn`). Any client authorized by the same gateway can decrypt the same event.
-- **KiH (Key-in-Handle)**: A fallback mode for authenticators that do not support the PRF extension. A random encryption key is embedded in the WebAuthn `user.id` field, which the authenticator stores and returns during discoverable login.
+- **KiH (Key-in-Handle)**: A **deprecated, decrypt-only** legacy mode. A random encryption key is embedded in the WebAuthn `user.id` field, which the authenticator stores and returns during discoverable login. Clients MUST NOT create new KiH credentials; the mode is retained in this spec only so existing `v=3` events remain readable and can be migrated to PRF.
 
 ## Overview
 
@@ -34,26 +34,31 @@ SETUP (one biometric prompt):
   4. Client encrypts the Nostr private key (nsec)
   5. Client publishes encrypted blob as a kind:31777 event
 
-LOGIN (one biometric prompt):
+LOGIN (one prompt; up to two on Safari):
   1. Browser presents passkey picker (discoverable credential)
-  2. Authenticator returns userHandle (pubkey) + PRF output
-  3. Client fetches kind:31777 event for that pubkey
-  4. Client derives the same AES-256 key and decrypts the nsec
+  2. Discovery assertion returns userHandle (the 32-byte pubkey)
+  3. Targeted assertion evaluates the PRF extension → 32-byte secret
+     (a separate ceremony to work around Safari not returning PRF
+      output on discovery; often auto-approved without a second prompt)
+  4. Client fetches kind:31777 event for that pubkey
+  5. Client derives the same AES-256 key and decrypts the nsec
 ```
 
 ## Encryption Modes
 
 ### PRF Mode (Version 1)
 
-The primary mode. The authenticator's PRF extension produces a hardware-bound secret that serves as input key material for HKDF. The Nostr public key is stored as `user.id` in the passkey, enabling discoverable login without any prior state.
+**The one and only mode for new registrations.** The authenticator's PRF extension produces a hardware-bound secret that serves as input key material for HKDF; it is never stored in `user.id`. The 32-byte Nostr public key is stored as `user.id` in the passkey, enabling discoverable login without any prior state. If the authenticator does not support PRF, registration fails — this spec defines no fallback.
 
 AAD version byte: `0x01`
 
-### Key-in-Handle Mode (Version 3)
+### Key-in-Handle Mode (Version 3) — DEPRECATED (decrypt-only)
 
-A fallback for authenticators that do not support PRF (some older security keys, certain platform configurations). A random 32-byte encryption key is embedded in the WebAuthn `user.id` field, prefixed with a `0x03` mode byte (33 bytes total). The authenticator stores this as part of the credential and returns it during discoverable authentication.
+> **Deprecated.** KiH registration was removed in keytr v0.8.0 because the encryption key stored in `user.id` is interceptable in JavaScript memory. Clients MUST NOT create new KiH credentials. This section is retained so implementations can decrypt existing `v=3` events for login and migration; KiH decryption will be removed from the reference implementation in a future release.
 
-KiH provides weaker security guarantees than PRF -- the key material is stored by the authenticator as opaque data rather than derived inside hardware. However, it enables the same user experience on devices that lack PRF support.
+A random 32-byte encryption key is embedded in the WebAuthn `user.id` field, prefixed with a `0x03` mode byte (33 bytes total). The authenticator stored this as part of the credential and returns it during discoverable authentication.
+
+KiH provides weaker security guarantees than PRF -- the key material is stored by the authenticator as opaque data rather than derived inside hardware, and it is recoverable in JS memory during login. Existing KiH credentials SHOULD be migrated to PRF (see [Migration (v3 → v1)](#migration-v3--v1)).
 
 AAD version byte: `0x03`
 
@@ -195,8 +200,8 @@ PublicKeyCredentialCreationOptions:
 
 **`user.id` encoding:**
 
-- **PRF mode**: `user.id` = 32-byte raw Nostr public key. This embeds the pubkey inside the passkey so it can be recovered during discoverable authentication without any relay lookup.
-- **KiH mode**: `user.id` = `0x03` || 32 random bytes (33 bytes total). The random bytes serve as the encryption key. The `0x03` prefix enables mode detection.
+- **PRF mode (the only mode for new registrations)**: `user.id` = 32-byte raw Nostr public key. This embeds the pubkey inside the passkey so it can be recovered during discoverable authentication without any relay lookup.
+- **KiH mode (legacy, not created by new clients)**: `user.id` = `0x03` || 32 random bytes (33 bytes total). The random bytes serve as the encryption key and the `0x03` prefix enables mode detection. New registrations MUST NOT produce this layout; it is documented only so existing `v=3` credentials can still be recognized during discoverable authentication.
 
 The `residentKey: "required"` parameter ensures the credential is stored on the authenticator as a discoverable credential, enabling login without the client knowing the credential ID in advance.
 
@@ -250,6 +255,41 @@ If the returned `userHandle` is 32 bytes, this is a PRF-mode credential. The pub
 
 If the returned `userHandle` is 33 bytes with a `0x03` first byte, this is a KiH-mode credential. The encryption key is `userHandle[1..33]`. No step 2 is needed -- the key material is already available. Fetch the kind:31777 event by `#d` filter using the credential ID.
 
+## Migration (v3 → v1)
+
+Existing KiH (`v=3`) credentials SHOULD be migrated to PRF (`v=1`). Because the decrypted nsec is the same key, migration re-wraps it under a new PRF passkey and retires the old KiH event with a [NIP-09](09.md) deletion request.
+
+The migration flow, in order (the ordering is load-bearing — nothing is deleted until the replacement is published):
+
+1. **Log in** with the existing KiH passkey (discoverable authentication) and decrypt the nsec.
+2. **Verify** the decrypted key's pubkey matches the old event's `pubkey` (mandatory, since `#d` lookups are cross-author).
+3. **Register a new PRF passkey** for the same nsec (32-byte pubkey in `user.id`).
+4. **Publish the new `v=1` event.** This MUST succeed on at least one relay before proceeding.
+5. **Publish a `kind:5` deletion** for the old KiH event.
+6. Optionally signal the old credential as unknown (WebAuthn Signal API) so it disappears from the passkey picker.
+
+The deletion request is a NIP-09 `kind:5` event authored by the same pubkey:
+
+```jsonc
+{
+  "kind": 5,
+  "pubkey": "<hex-pubkey>",
+  "content": "<optional human-readable reason>",
+  "tags": [
+    ["a", "31777:<hex-pubkey>:<old-credential-id-base64url>"],
+    ["k", "31777"],
+    ["e", "<optional old event id>"]
+  ],
+  "created_at": <unix-timestamp>
+}
+```
+
+- `a` (REQUIRED): the addressable coordinate of the old KiH event (`31777:<pubkey>:<d-tag>`). Relays remove all versions of that coordinate up to the deletion's `created_at`.
+- `k` (REQUIRED): the kind being deleted, `"31777"`.
+- `e` (OPTIONAL): the specific old event id, as a belt-and-braces hint for relays that don't index `a` tags.
+
+Deletion is best-effort: the new PRF event is already live, and KiH decryption still works this release, so a failed deletion is non-fatal (the old event will simply be superseded on migration-aware clients).
+
 ## Gateway Model
 
 A gateway is a WebAuthn Relying Party domain that authorizes multiple independent origins via the Related Origin Requests mechanism (`.well-known/webauthn`). Any client listed in a gateway's `.well-known/webauthn` file can create and use passkeys scoped to that gateway's `rpId`.
@@ -272,12 +312,13 @@ Gateways are federated and permissionless. Any domain can become a gateway by ho
 - **Unique ciphertexts**: The IV and HKDF salt are generated fresh for each encryption. Re-encrypting the same nsec with the same passkey produces a different blob every time.
 - **Memory hygiene**: Implementations SHOULD zero derived keys from memory after use.
 - **Relay is untrusted storage**: All cryptographic operations happen client-side. The relay stores opaque ciphertext. Compromising a relay does not reveal private keys.
-- **KiH limitations**: In KiH mode, the encryption key is stored as opaque data by the authenticator rather than derived inside hardware. A compromised authenticator storage could expose the key material. PRF mode SHOULD be preferred when available.
+- **KiH limitations (deprecated mode)**: In KiH mode the encryption key is stored as opaque data in `user.id` rather than derived inside hardware. During discoverable login it is returned to the client as the `userHandle`, so it is recoverable in JavaScript memory — this is why KiH registration was removed in keytr v0.8.0. Clients MUST NOT create new KiH credentials and SHOULD migrate existing ones to PRF.
+- **Decrypted key exposure (PRF mode)**: PRF keeps the *encryption* key inside the authenticator, but the decrypted nsec is returned to the client so it can sign events. An attacker who has already compromised the client runtime (malicious dependency, XSS, hostile extension) can read the nsec while it is in memory. PRF is not a substitute for a hardware signer that never releases the private key; it removes the KiH weakness (key sitting in `user.id`) but not this one.
 - **Multi-device sync**: Platform authenticators (iCloud Keychain, Google Password Manager) sync passkeys across devices. This means the encryption capability follows the user to new devices, but also that the security boundary extends to the sync provider.
 
 ## Recommendations
 
-Clients SHOULD attempt PRF mode first and fall back to KiH only when the authenticator does not support PRF.
+Clients MUST register new credentials using PRF mode (`v=1`). KiH mode (`v=3`) is deprecated for registration and retained decrypt-only; there is no PRF fallback, so an authenticator without the PRF extension cannot register. Clients SHOULD migrate existing `v=3` credentials to `v=1` (see [Migration (v3 → v1)](#migration-v3--v1)).
 
 Clients SHOULD publish events to multiple relays for availability.
 

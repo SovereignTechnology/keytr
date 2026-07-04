@@ -15,19 +15,34 @@
       <h2>Checking passkey support...</h2>
     </div>
 
+    <section id="relays-section" class="card">
+      <h2>Relays</h2>
+      <p>Events are published to and fetched from these relays (one per line).</p>
+      <div class="input-group">
+        <label for="relays">Relay URLs</label>
+        <textarea id="relays" rows="3">wss://relay.damus.io
+wss://nos.lol
+wss://relay.nostr.band</textarea>
+      </div>
+    </section>
+
     <section id="setup-section" class="card hidden">
-      <h2>Setup - Encrypt your nsec</h2>
-      <p>Generate a new Nostr identity and encrypt it with your passkey.</p>
+      <h2>Setup - Create a passkey identity</h2>
+      <p>Generate a new Nostr identity, encrypt it with a PRF passkey, and publish the kind:31777 event.</p>
 
       <div class="input-group">
-        <label for="existing-nsec">Or paste an existing nsec:</label>
-        <input type="password" id="existing-nsec" placeholder="nsec1..." autocomplete="off">
+        <label for="setup-username">Username</label>
+        <input type="text" id="setup-username" placeholder="alice" autocomplete="off">
+      </div>
+      <div class="input-group">
+        <label for="setup-displayname">Display name</label>
+        <input type="text" id="setup-displayname" placeholder="Alice" autocomplete="off">
       </div>
 
-      <button id="btn-setup" class="primary">Create Passkey & Encrypt</button>
+      <button id="btn-setup" class="primary">Create Passkey &amp; Publish</button>
 
       <div id="setup-result" class="result hidden">
-        <h3>Your encrypted key</h3>
+        <h3>Your keytr identity</h3>
         <div class="field">
           <label>npub</label>
           <code id="result-npub"></code>
@@ -37,13 +52,17 @@
           <code id="result-blob" class="blob"></code>
         </div>
         <div class="field">
-          <label>Nostr event (kind:31777)</label>
+          <label>Published event (kind:31777)</label>
           <pre id="result-event"></pre>
         </div>
         <button id="btn-copy-event" class="secondary">Copy Event JSON</button>
         <hr>
         <h3>Backup gateway (optional)</h3>
         <p>Register a second passkey on <code>nostkey.org</code> so your key stays accessible even if the primary gateway goes down.</p>
+        <div class="input-group">
+          <label for="backup-nsec">nsec to back up</label>
+          <input type="password" id="backup-nsec" placeholder="nsec1..." autocomplete="off">
+        </div>
         <button id="btn-backup" class="secondary">Add Backup Gateway</button>
         <div id="backup-result" class="hidden">
           <div class="field">
@@ -55,21 +74,20 @@
     </section>
 
     <section id="login-section" class="card hidden">
-      <h2>Login - Decrypt your nsec</h2>
-      <p>Paste a kind:31777 event to decrypt with your passkey.</p>
+      <h2>Login - Discoverable passkey</h2>
+      <p>Pick a passkey; keytr fetches your event from the relays and decrypts your nsec. Works for PRF and legacy KiH credentials.</p>
 
-      <div class="input-group">
-        <label for="event-json">Event JSON:</label>
-        <textarea id="event-json" rows="6" placeholder='{"kind":31777,...}'></textarea>
-      </div>
-
-      <button id="btn-login" class="primary">Decrypt with Passkey</button>
+      <button id="btn-login" class="primary">Login with Passkey</button>
 
       <div id="login-result" class="result hidden">
-        <h3>Decrypted</h3>
+        <h3>Logged in</h3>
         <div class="field">
           <label>npub</label>
           <code id="login-npub"></code>
+        </div>
+        <div class="field">
+          <label>pubkey (hex)</label>
+          <code id="login-pubkey"></code>
         </div>
         <div class="field">
           <label>nsec (keep secret!)</label>
@@ -78,24 +96,35 @@
       </div>
     </section>
 
-    <section id="password-section" class="card hidden">
-      <h2>Password Fallback</h2>
-      <p>Your authenticator doesn't support PRF. Use a password instead.</p>
+    <section id="migrate-section" class="card hidden">
+      <h2>Migrate from KiH</h2>
+      <p>Upgrade a legacy Key-in-Handle credential to PRF: sign in with the old passkey, register a new PRF passkey for the same key, publish the replacement event, and delete the old one.</p>
 
       <div class="input-group">
-        <label for="pw-nsec">nsec to encrypt:</label>
-        <input type="password" id="pw-nsec" placeholder="nsec1..." autocomplete="off">
+        <label for="migrate-username">New passkey username</label>
+        <input type="text" id="migrate-username" placeholder="alice" autocomplete="off">
       </div>
       <div class="input-group">
-        <label for="pw-password">Password:</label>
-        <input type="password" id="pw-password" placeholder="Strong password" autocomplete="off">
+        <label for="migrate-displayname">New passkey display name</label>
+        <input type="text" id="migrate-displayname" placeholder="Alice" autocomplete="off">
       </div>
 
-      <button id="btn-pw-encrypt" class="primary">Encrypt with Password</button>
-      <button id="btn-pw-decrypt" class="secondary">Decrypt with Password</button>
+      <button id="btn-migrate" class="primary">Migrate from KiH</button>
 
-      <div id="pw-result" class="result hidden">
-        <code id="pw-output"></code>
+      <div id="migrate-result" class="result hidden">
+        <h3>Migrated to PRF</h3>
+        <div class="field">
+          <label>npub</label>
+          <code id="migrate-npub"></code>
+        </div>
+        <div class="field">
+          <label>Deletion published</label>
+          <code id="migrate-deletion"></code>
+        </div>
+        <div class="field">
+          <label>New event (kind:31777, v=1)</label>
+          <pre id="migrate-event"></pre>
+        </div>
       </div>
     </section>
 

@@ -1,7 +1,7 @@
 {
   "name": "@sovit.xyz/keytr",
-  "version": "0.7.1",
-  "description": "Passkey login for Nostr. Encrypt your nsec with a WebAuthn passkey, publish to relays, decrypt on any device. Implements NIP-K1.",
+  "version": "0.8.0",
+  "description": "Passkey login for Nostr. Encrypt your nsec with a WebAuthn PRF passkey, publish to relays, decrypt on any device. Implements NIP-K1.",
   "type": "module",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
@@ -44,7 +44,7 @@
     "fido2",
     "nsec",
     "encryption",
-    "kih"
+    "prf"
   ],
   "author": "sovITxyz",
   "repository": {

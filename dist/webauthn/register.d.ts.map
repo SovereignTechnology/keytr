@@ -1,1 +1,1 @@
-{"version":3,"file":"register.d.ts","sourceRoot":"","sources":["../../src/webauthn/register.ts"],"names":[],"mappings":"AAEA,OAAO,KAAK,EAAmB,eAAe,EAAE,cAAc,EAAE,MAAM,aAAa,CAAA;AAQnF;;;;;;GAMG;AACH,wBAAsB,eAAe,CACnC,OAAO,EAAE,eAAe,GACvB,OAAO,CAAC,cAAc,CAAC,CAkEzB"}
+{"version":3,"file":"register.d.ts","sourceRoot":"","sources":["../../src/webauthn/register.ts"],"names":[],"mappings":"AAEA,OAAO,KAAK,EAAmB,eAAe,EAAE,cAAc,EAAE,MAAM,aAAa,CAAA;AASnF;;;;;;;;;;;;;;;GAeG;AACH,wBAAsB,eAAe,CACnC,OAAO,EAAE,eAAe,GACvB,OAAO,CAAC,cAAc,CAAC,CA2HzB"}
