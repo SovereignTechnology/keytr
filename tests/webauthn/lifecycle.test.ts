@@ -1,180 +1,98 @@
 import { describe, it, expect, vi, afterEach } from 'vitest'
-import { randomBytes } from '@noble/hashes/utils.js'
-import { base64url } from '@scure/base'
-import { MODE_BYTE, USER_ID_SIZE } from '../../src/types.js'
+import { randomBytes, bytesToHex } from '@noble/hashes/utils.js'
+import { KIH_MODE_BYTE, KIH_USER_ID_SIZE, KEYTR_VERSION, KEYTR_KIH_VERSION } from '../../src/types.js'
 
-// Bypass cached native refs so test mocks on navigator.credentials take effect
 vi.mock('../../src/webauthn/natives.js', () => ({
   nativeCreate: undefined,
   nativeGet: undefined,
 }))
 
-// Stash originals for cleanup
 const originalNavigator = globalThis.navigator
+const PUBKEY = bytesToHex(randomBytes(32))
 
-function makeKihUserId(): Uint8Array {
-  const userId = new Uint8Array(USER_ID_SIZE)
-  userId[0] = MODE_BYTE
-  userId.set(randomBytes(32), 1)
-  return userId
+function kihHandle(): Uint8Array {
+  const h = new Uint8Array(KIH_USER_ID_SIZE)
+  h[0] = KIH_MODE_BYTE
+  h.set(randomBytes(32), 1)
+  return h
 }
 
-function mockCredentialCreate(userId: Uint8Array) {
-  const rawId = randomBytes(16)
-  return vi.fn().mockResolvedValue({
-    type: 'public-key',
-    rawId: rawId.buffer.slice(0),
-    response: {
-      getTransports: () => ['internal', 'hybrid'],
-    },
-    getClientExtensionResults: () => ({}),
-    _userId: userId,
-  })
-}
-
-function mockCredentialGet(userId: Uint8Array, rawId?: Uint8Array) {
-  const credRawId = rawId ?? randomBytes(16)
-  return vi.fn().mockResolvedValue({
-    type: 'public-key',
-    rawId: credRawId.buffer.slice(0),
-    response: {
-      userHandle: userId.buffer.slice(0),
-    },
-    getClientExtensionResults: () => ({}),
-  })
-}
-
-function setupGlobals(overrides?: {
-  create?: ReturnType<typeof vi.fn>
-  get?: ReturnType<typeof vi.fn>
-}) {
+function setupGlobals(overrides?: { create?: ReturnType<typeof vi.fn>; get?: ReturnType<typeof vi.fn> }) {
   const create = overrides?.create ?? vi.fn()
   const get = overrides?.get ?? vi.fn()
-
   Object.defineProperty(globalThis, 'navigator', {
-    value: {
-      credentials: { create, get },
-    },
+    value: { credentials: { create, get } },
     configurable: true,
   })
-
   if (!globalThis.crypto?.getRandomValues) {
     Object.defineProperty(globalThis, 'crypto', {
-      value: {
-        getRandomValues: (arr: Uint8Array) => {
-          const bytes = randomBytes(arr.length)
-          arr.set(bytes)
-          return arr
-        },
-      },
+      value: { getRandomValues: (a: Uint8Array) => { a.set(randomBytes(a.length)); return a } },
       configurable: true,
     })
   }
-
   return { create, get }
 }
 
-function restoreGlobals() {
-  Object.defineProperty(globalThis, 'navigator', {
-    value: originalNavigator,
-    configurable: true,
-  })
+function restore() {
+  Object.defineProperty(globalThis, 'navigator', { value: originalNavigator, configurable: true })
 }
 
-describe('WebAuthn credential lifecycle', () => {
-  afterEach(() => {
-    restoreGlobals()
-    vi.restoreAllMocks()
-  })
+describe('WebAuthn credential lifecycle (PRF)', () => {
+  afterEach(() => { restore(); vi.restoreAllMocks() })
 
-  it('registerPasskey returns credential and keyMaterial', async () => {
-    const { create } = setupGlobals({ create: mockCredentialCreate(makeKihUserId()) })
-
-    const { registerPasskey } = await import('../../src/webauthn/register.js')
-
-    const result = await registerPasskey({
-      userName: 'alice',
-      userDisplayName: 'Alice',
+  it('authenticatePasskey returns the PRF output', async () => {
+    const prfOutput = randomBytes(32)
+    setupGlobals({
+      get: vi.fn().mockResolvedValue({
+        type: 'public-key',
+        rawId: randomBytes(16).buffer.slice(0),
+        response: {},
+        getClientExtensionResults: () => ({ prf: { results: { first: prfOutput.buffer.slice(0) } } }),
+      }),
     })
 
-    expect(result.credential.rpId).toBe('keytr.org')
-    expect(result.credential.credentialId).toBeInstanceOf(Uint8Array)
-    expect(result.credential.credentialIdBase64url).toBe(
-      base64url.encode(result.credential.credentialId)
-    )
-    expect(result.credential.transports).toEqual(['internal', 'hybrid'])
-    expect(result.keyMaterial).toBeInstanceOf(Uint8Array)
-    expect(result.keyMaterial.length).toBe(32)
-    expect(create).toHaveBeenCalledOnce()
+    const { authenticatePasskey } = await import('../../src/webauthn/authenticate.js')
+    const key = await authenticatePasskey({ credentialId: randomBytes(16), rpId: 'keytr.org' })
+    expect(key).toEqual(prfOutput)
   })
 
-  it('registerPasskey uses custom rpId and timeout', async () => {
-    const { create } = setupGlobals({ create: mockCredentialCreate(makeKihUserId()) })
-
-    const { registerPasskey } = await import('../../src/webauthn/register.js')
-
-    const result = await registerPasskey({
-      userName: 'bob',
-      userDisplayName: 'Bob',
-      rpId: 'custom.example',
-      rpName: 'Custom RP',
-      timeout: 60000,
+  it('authenticatePasskey requests the PRF extension and throws when absent', async () => {
+    const { get } = setupGlobals({
+      get: vi.fn().mockResolvedValue({
+        type: 'public-key',
+        rawId: randomBytes(16).buffer.slice(0),
+        response: {},
+        getClientExtensionResults: () => ({}),
+      }),
     })
 
-    expect(result.credential.rpId).toBe('custom.example')
-
-    const createCall = create.mock.calls[0][0] as CredentialCreationOptions
-    expect(createCall.publicKey?.rp?.id).toBe('custom.example')
-    expect(createCall.publicKey?.rp?.name).toBe('Custom RP')
-    expect(createCall.publicKey?.timeout).toBe(60000)
-  })
-
-  it('registerPasskey throws WebAuthnError on null result', async () => {
-    setupGlobals({ create: vi.fn().mockResolvedValue(null) })
-
-    const { registerPasskey } = await import('../../src/webauthn/register.js')
-
+    const { authenticatePasskey } = await import('../../src/webauthn/authenticate.js')
+    const { PrfNotSupportedError } = await import('../../src/errors.js')
     await expect(
-      registerPasskey({ userName: 'eve', userDisplayName: 'Eve' })
-    ).rejects.toThrow('Credential creation returned null')
+      authenticatePasskey({ credentialId: randomBytes(16), rpId: 'keytr.org' })
+    ).rejects.toBeInstanceOf(PrfNotSupportedError)
+    expect((get.mock.calls[0][0] as CredentialRequestOptions).publicKey as any).toHaveProperty('extensions')
   })
 
-  it('authenticatePasskey extracts key from userHandle', async () => {
-    const userId = makeKihUserId()
-    const expectedKey = userId.slice(1)
-    const credentialId = randomBytes(16)
-    setupGlobals({ get: mockCredentialGet(userId) })
-
-    const { authenticatePasskey } = await import('../../src/webauthn/authenticate.js')
-
-    const result = await authenticatePasskey({
-      credentialId,
-      rpId: 'keytr.org',
-      transports: ['internal'],
+  it('kihAuthenticatePasskey extracts the key from a legacy userHandle (no PRF ext)', async () => {
+    const handle = kihHandle()
+    const { get } = setupGlobals({
+      get: vi.fn().mockResolvedValue({
+        type: 'public-key',
+        rawId: randomBytes(16).buffer.slice(0),
+        response: { userHandle: handle.buffer.slice(0) },
+        getClientExtensionResults: () => ({}),
+      }),
     })
 
-    expect(result).toEqual(expectedKey)
+    const { kihAuthenticatePasskey } = await import('../../src/webauthn/authenticate.js')
+    const key = await kihAuthenticatePasskey({ credentialId: randomBytes(16), rpId: 'keytr.org' })
+    expect(key).toEqual(handle.slice(1))
+    // legacy path must NOT send a PRF extension
+    expect((get.mock.calls[0][0] as CredentialRequestOptions).publicKey as any).not.toHaveProperty('extensions')
   })
 
-  it('authenticatePasskey uses custom timeout', async () => {
-    const userId = makeKihUserId()
-    const credentialId = randomBytes(16)
-    const { get } = setupGlobals({ get: mockCredentialGet(userId) })
-
-    const { authenticatePasskey } = await import('../../src/webauthn/authenticate.js')
-
-    await authenticatePasskey({
-      credentialId,
-      rpId: 'keytr.org',
-      timeout: 30000,
-    })
-
-    const getCall = get.mock.calls[0][0] as CredentialRequestOptions
-    expect(getCall.publicKey?.timeout).toBe(30000)
-  })
-
-  it('authenticatePasskey throws when userHandle is empty', async () => {
-    const credentialId = randomBytes(16)
+  it('kihAuthenticatePasskey throws when the userHandle is empty', async () => {
     setupGlobals({
       get: vi.fn().mockResolvedValue({
         type: 'public-key',
@@ -183,74 +101,28 @@ describe('WebAuthn credential lifecycle', () => {
         getClientExtensionResults: () => ({}),
       }),
     })
-
-    const { authenticatePasskey } = await import('../../src/webauthn/authenticate.js')
-
+    const { kihAuthenticatePasskey } = await import('../../src/webauthn/authenticate.js')
     await expect(
-      authenticatePasskey({ credentialId, rpId: 'keytr.org' })
+      kihAuthenticatePasskey({ credentialId: randomBytes(16), rpId: 'keytr.org' })
     ).rejects.toThrow('userHandle')
   })
 
-  it('discoverPasskey returns key and credentialId in single step', async () => {
-    const userId = makeKihUserId()
-    const expectedKey = userId.slice(1)
-    const credRawId = randomBytes(16)
-
-    const getMock = vi.fn().mockResolvedValue({
-      type: 'public-key',
-      rawId: credRawId.buffer.slice(0),
-      response: {
-        userHandle: userId.buffer.slice(0),
-      },
-      getClientExtensionResults: () => ({}),
-    })
-
-    setupGlobals({ get: getMock })
-
-    const { discoverPasskey } = await import('../../src/webauthn/authenticate.js')
-    const result = await discoverPasskey()
-
-    // Single ceremony — no step 2
-    expect(getMock).toHaveBeenCalledOnce()
-
-    // Discovery: empty allowCredentials, no PRF
-    const step1 = getMock.mock.calls[0][0] as CredentialRequestOptions
-    expect(step1.publicKey?.allowCredentials).toEqual([])
-    expect((step1.publicKey as any)?.extensions?.prf).toBeUndefined()
-
-    expect(result.keyMaterial).toEqual(expectedKey)
-    expect(result.credentialId).toEqual(credRawId)
-  })
-
-  it('discoverPasskey throws when userHandle is empty', async () => {
-    setupGlobals({
-      get: vi.fn().mockResolvedValue({
-        type: 'public-key',
-        rawId: randomBytes(16).buffer.slice(0),
-        response: { userHandle: new ArrayBuffer(0) },
-        getClientExtensionResults: () => ({}),
-      }),
-    })
-
-    const { discoverPasskey } = await import('../../src/webauthn/authenticate.js')
-
-    await expect(discoverPasskey()).rejects.toThrow('userHandle')
-  })
-
-  it('full register → encrypt → authenticate → decrypt roundtrip', async () => {
-    const userId = makeKihUserId()
-    const credRawId = randomBytes(16)
-
+  it('full PRF register → encrypt(v1) → authenticate → decrypt(v1) roundtrip', async () => {
+    const prfOutput = randomBytes(32)
+    const rawId = randomBytes(16)
     setupGlobals({
       create: vi.fn().mockResolvedValue({
         type: 'public-key',
-        rawId: credRawId.buffer.slice(0),
-        response: {
-          getTransports: () => ['internal', 'hybrid'],
-        },
-        getClientExtensionResults: () => ({}),
+        rawId: rawId.buffer.slice(0),
+        response: { getTransports: () => ['internal'] },
+        getClientExtensionResults: () => ({ prf: { enabled: true, results: { first: prfOutput.buffer.slice(0) } } }),
       }),
-      get: mockCredentialGet(userId),
+      get: vi.fn().mockResolvedValue({
+        type: 'public-key',
+        rawId: rawId.buffer.slice(0),
+        response: {},
+        getClientExtensionResults: () => ({ prf: { results: { first: prfOutput.buffer.slice(0) } } }),
+      }),
     })
 
     const { registerPasskey } = await import('../../src/webauthn/register.js')
@@ -258,35 +130,25 @@ describe('WebAuthn credential lifecycle', () => {
     const { encryptNsec } = await import('../../src/crypto/encrypt.js')
     const { decryptNsec } = await import('../../src/crypto/decrypt.js')
 
-    // Step 1: Register passkey
     const { credential, keyMaterial } = await registerPasskey({
-      userName: 'alice',
-      userDisplayName: 'Alice',
+      userName: 'alice', userDisplayName: 'Alice', pubkey: PUBKEY,
     })
 
-    // Step 2: Encrypt nsec
     const nsecBytes = randomBytes(32)
     const encryptedBlob = encryptNsec({
-      nsecBytes,
-      keyMaterial,
-      credentialId: credential.credentialId,
+      nsecBytes, keyMaterial, credentialId: credential.credentialId, version: KEYTR_VERSION,
     })
 
-    // Step 3: Authenticate (simulates login on new device)
     const authKey = await authenticatePasskey({
-      credentialId: credential.credentialId,
-      rpId: credential.rpId,
-      transports: credential.transports,
+      credentialId: credential.credentialId, rpId: credential.rpId, transports: credential.transports,
     })
+    expect(authKey).toEqual(keyMaterial)
 
-    // Step 4: Decrypt nsec — use the same key material as registration
-    // (In real flow, authenticator returns same userHandle → same key)
     const decrypted = decryptNsec({
-      encryptedBlob,
-      keyMaterial,
-      credentialId: credential.credentialId,
+      encryptedBlob, keyMaterial: authKey, credentialId: credential.credentialId, version: KEYTR_VERSION,
     })
-
     expect(decrypted).toEqual(nsecBytes)
+    expect(KEYTR_VERSION).toBe(1)
+    expect(KEYTR_KIH_VERSION).toBe(3)
   })
 })

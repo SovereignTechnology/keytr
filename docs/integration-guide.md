@@ -59,8 +59,9 @@ You do **not** need to store credential IDs, rpIds, or encrypted blobs — those
 
 ### When to update the index
 
-- **After registration** (`setup`, `setupKeytr`, or `registerPasskey`): add the pubkey.
-- **After discoverable login** (`discover` or `discoverAndLogin`): add the recovered pubkey (auto-upgrade from tier 3 to tier 1).
+- **After registration** (`setup`, `setupKeytr`, `addBackupGateway`, or `registerPasskey`): add the pubkey.
+- **After migration** (`migrateFromKih`): add the recovered pubkey.
+- **After discoverable login** (`discover`): add the recovered pubkey (auto-upgrade from tier 3 to tier 1).
 - **After tier 2 login**: add the pubkey from the app's user store (auto-upgrade from tier 2 to tier 1).
 - **When the user removes their passkey**: remove the entry.
 
@@ -118,7 +119,7 @@ keytr detects the mode from the `userHandle` length:
 - **32 bytes** → PRF mode (pubkey)
 - **33 bytes, byte[0] === 0x03** → KiH mode (encryption key)
 
-The unified `discover()` and `unifiedDiscover()` APIs handle this automatically. Apps should not need to inspect `userHandle` directly.
+The unified `discover()` API (and the lower-level `discoverPasskey()`) handles this automatically. Apps should not need to inspect `userHandle` directly.
 
 ### How apps should use it
 
@@ -295,15 +296,16 @@ For users who don't have a Nostr identity yet:
 import { setup, publishKeytrEvent, nsecToHexPubkey } from '@sovit.xyz/keytr'
 import { finalizeEvent } from 'nostr-tools/pure'
 
-// Tries PRF first, falls back to KiH for password manager extensions
-const { credential, encryptedBlob, eventTemplate, nsecBytes, npub, mode } = await setup({
+// Registers a PRF passkey. Throws PrfNotSupportedError if the authenticator
+// lacks the PRF extension — there is no fallback (see PRF support detection below).
+const { credential, encryptedBlob, eventTemplate, nsecBytes, npub } = await setup({
   userName: 'My App User',
   userDisplayName: 'My App User',
   rpId: 'keytr.org',             // use a gateway for cross-client access
   clientName: 'my-app',
 })
 
-console.log(`Registered in ${mode} mode`) // 'prf' or 'kih'
+// The result has no `mode` field — PRF is the only registration mode.
 
 // Sign and publish
 const signedEvent = finalizeEvent(eventTemplate, nsecBytes)
@@ -331,7 +333,8 @@ async function savePasskey(nsecBech32, pubkey, signer) {
   const nsecBytes = decodeNsec(nsecBech32)
   const rpId = KEYTR_GATEWAYS[0]  // 'keytr.org'
 
-  const { credential, prfOutput } = await registerPasskey({
+  // registerPasskey uses PRF; it throws PrfNotSupportedError with no fallback.
+  const { credential, keyMaterial } = await registerPasskey({
     userName: pubkey.slice(0, 16),
     userDisplayName: 'Nostr User',
     pubkey,
@@ -343,11 +346,11 @@ async function savePasskey(nsecBech32, pubkey, signer) {
   try {
     encryptedBlob = encryptNsec({
       nsecBytes,
-      prfOutput,
+      keyMaterial,
       credentialId: credential.credentialId,
     })
   } finally {
-    prfOutput.fill(0)
+    keyMaterial.fill(0)
   }
 
   const eventTemplate = buildKeytrEvent({
@@ -384,6 +387,36 @@ await publishKeytrEvent(signedEvent, RELAYS)
 
 This creates a second kind:31777 event with a different `d` tag (different credential ID) and different `rp` tag (`nostkey.org`). If `keytr.org` goes down, the user can still authenticate via `nostkey.org`.
 
+### Migrating legacy KiH users
+
+Users who registered before v0.8.0 may have a KiH (`v=3`) credential. They can still log in via `discover()`/`loginWithKeytr()`, but KiH is deprecated and decryption will be removed in a future release — offer them a one-tap upgrade to PRF:
+
+```javascript
+import { migrateFromKih } from '@sovit.xyz/keytr'
+
+const { npub, pubkey, deletionPublished, nsecBytes } = await migrateFromKih({
+  relays: RELAYS,
+  userName: 'My App User',
+  userDisplayName: 'My App User',
+  rpId: 'keytr.org',       // gateway of the old credential (and the new one)
+  clientName: 'my-app',
+})
+try {
+  addToIndex(pubkey)
+  if (!deletionPublished) {
+    // Non-fatal: the new PRF event is live, but the old kind:5 deletion
+    // didn't reach any relay — you may retry or just leave the old event
+    // to be superseded on migration-aware clients.
+  }
+} finally {
+  nsecBytes.fill(0)   // migrateFromKih hands you the nsec — you own it
+}
+```
+
+`migrateFromKih()` prompts twice (log in with the old KiH passkey, then create the new PRF passkey), publishes the new `v=1` event, and publishes a NIP-09 `kind:5` deletion for the old KiH event. If the selected passkey is already PRF, it throws (nothing to migrate). If PRF is unavailable on the device, it throws `PrfNotSupportedError` **before** deleting anything.
+
+How to detect a KiH login so you can prompt for migration: after a `discover()` login, if you want to know whether the credential was legacy, call the lower-level `discoverPasskey()` yourself and inspect `DiscoverResult.mode === 'kih'` — the high-level `discover()` result intentionally omits `mode`.
+
 ---
 
 ## Error Handling
@@ -417,7 +450,7 @@ See [Architecture: Password Manager Extensions](architecture.md#password-manager
 
 ### PRF support detection
 
-Check for PRF support early if you need to inform the user which mode will be used. The unified `setup()` API handles this automatically — it tries PRF first and falls back to KiH:
+keytr is PRF-only with no fallback, so `setup()` throws `PrfNotSupportedError` when PRF is unavailable. Check support up front so you can show a clear message instead of surfacing a thrown error:
 
 ```javascript
 import { checkPrfSupport } from '@sovit.xyz/keytr'
@@ -425,11 +458,14 @@ import { checkPrfSupport } from '@sovit.xyz/keytr'
 const { supported, platformAuthenticator, reason } = await checkPrfSupport()
 
 if (!supported) {
-  // PRF unavailable — setup() will use KiH mode automatically
-  // You can still show passkey UI, just inform the user
-  console.log('PRF not available, will use KiH mode:', reason)
+  // PRF unavailable — passkey registration is not possible on this device.
+  // Hide the "Create passkey" UI and explain why (e.g. Firefox Android,
+  // an older security key, or a password-manager extension without PRF).
+  console.log('PRF not available:', reason)
 }
 ```
+
+`checkPrfSupport()` uses `getClientCapabilities()` (Chrome 132+) where available and otherwise reports optimistically, deferring the definitive check to registration time (where a create→get fallback confirms PRF output). So a `supported: true` here is not an absolute guarantee — `setup()` may still throw if the chosen authenticator turns out not to return PRF output.
 
 ### Comprehensive capability detection
 
@@ -457,7 +493,7 @@ Uses `PublicKeyCredential.getClientCapabilities()` (Chrome 132+) when available,
 
 ### SSR safety
 
-All WebAuthn functions (`registerPasskey`, `registerKihPasskey`, `authenticatePasskey`, `discoverPasskey`, `unifiedDiscover`) throw `WebAuthnError` immediately in non-browser environments. For SSR frameworks (Next.js, Nuxt), use `ensureBrowser()` to gate UI:
+All WebAuthn functions (`registerPasskey`, `authenticatePasskey`, `kihAuthenticatePasskey`, `discoverPasskey`) throw `WebAuthnError` immediately in non-browser environments. For SSR frameworks (Next.js, Nuxt), use `ensureBrowser()` to gate UI:
 
 ```javascript
 import { ensureBrowser } from '@sovit.xyz/keytr'
@@ -487,7 +523,7 @@ const caps = await checkCapabilities()
 
 if (caps.conditionalMediation) {
   // Show passkey suggestions in the username input
-  const { nsecBytes, pubkey, mode } = await discover(RELAYS, {
+  const { nsecBytes, pubkey } = await discover(RELAYS, {
     mediation: 'conditional',
   })
 }
@@ -590,6 +626,8 @@ Integration checklist for client developers:
 - [ ] **Memory hygiene**: Zero `nsecBytes` in `finally` blocks after use
 - [ ] **Session restore**: Re-acquire signing keys lazily or eagerly based on your app's needs
 - [ ] **Backup gateway**: Offer registration on a second gateway (`nostkey.org`) for redundancy
+- [ ] **KiH migration**: Offer legacy KiH (`v=3`) users a one-tap upgrade via `migrateFromKih()`
+- [ ] **PRF-only**: There is no fallback — gate the passkey UI on `checkPrfSupport()` and handle `PrfNotSupportedError`
 - [ ] **Extension detection**: Detect password manager interference and show a targeted hint
 - [ ] **Capability check**: Use `checkCapabilities()` to detect PRF, conditional UI, ROR, and Signal API support
 - [ ] **Backup flags**: Check `credential.backupEligible` and warn if the passkey won't sync

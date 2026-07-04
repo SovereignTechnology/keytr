@@ -1,46 +1,61 @@
 import { describe, it, expect } from 'vitest'
-import { generateUserId, extractKey } from '../../src/webauthn/kih.js'
-import { MODE_BYTE, USER_ID_SIZE, KEY_SIZE } from '../../src/types.js'
+import { detectMode, extractKey } from '../../src/webauthn/kih.js'
+import { KIH_MODE_BYTE, KIH_USER_ID_SIZE, KIH_KEY_SIZE, PRF_USER_ID_SIZE } from '../../src/types.js'
 import { randomBytes } from '@noble/hashes/utils.js'
 
-describe('user ID helpers', () => {
-  describe('generateUserId', () => {
-    it('produces a 33-byte buffer with 0x03 prefix', () => {
-      const userId = generateUserId()
-      expect(userId.length).toBe(USER_ID_SIZE)
-      expect(userId[0]).toBe(MODE_BYTE)
-    })
+function makeKihHandle(): Uint8Array {
+  const handle = new Uint8Array(KIH_USER_ID_SIZE)
+  handle[0] = KIH_MODE_BYTE
+  handle.set(randomBytes(KIH_KEY_SIZE), 1)
+  return handle
+}
 
-    it('generates different keys each time', () => {
-      const a = generateUserId()
-      const b = generateUserId()
-      expect(a.slice(1)).not.toEqual(b.slice(1))
-    })
+describe('detectMode', () => {
+  it('detects PRF from a 32-byte userHandle (the pubkey)', () => {
+    expect(detectMode(randomBytes(PRF_USER_ID_SIZE))).toBe('prf')
   })
 
-  describe('extractKey', () => {
-    it('extracts the 32-byte key from a userHandle', () => {
-      const userId = generateUserId()
-      const key = extractKey(userId)
-      expect(key.length).toBe(KEY_SIZE)
-      expect(key).toEqual(userId.slice(1))
-    })
+  it('detects legacy KiH from a 33-byte 0x03-prefixed userHandle', () => {
+    expect(detectMode(makeKihHandle())).toBe('kih')
+  })
 
-    it('throws for wrong-size handle', () => {
-      expect(() => extractKey(randomBytes(32))).toThrow('userHandle is 32 bytes')
-    })
+  it('throws for a 33-byte handle with the wrong prefix', () => {
+    const handle = new Uint8Array(KIH_USER_ID_SIZE)
+    handle[0] = 0x01
+    expect(() => detectMode(handle)).toThrow('Unrecognized userHandle format')
+  })
 
-    it('throws for wrong prefix byte', () => {
-      const handle = new Uint8Array(33)
-      handle[0] = 0x01
-      expect(() => extractKey(handle)).toThrow('Unrecognized userHandle format')
-    })
+  it('throws (truncation) for a handle shorter than 32 bytes', () => {
+    expect(() => detectMode(randomBytes(16))).toThrow('truncated')
+  })
 
-    it('returns an independent copy (not a view)', () => {
-      const userId = generateUserId()
-      const key = extractKey(userId)
-      key[0] = 0xff
-      expect(userId[1]).not.toBe(0xff)
-    })
+  it('throws for an unrecognized length (e.g. 40 bytes)', () => {
+    expect(() => detectMode(randomBytes(40))).toThrow('Unrecognized userHandle format')
+  })
+})
+
+describe('extractKey', () => {
+  it('extracts the 32-byte key from a legacy KiH userHandle', () => {
+    const handle = makeKihHandle()
+    const key = extractKey(handle)
+    expect(key.length).toBe(KIH_KEY_SIZE)
+    expect(key).toEqual(handle.slice(1))
+  })
+
+  it('throws for a wrong-size handle', () => {
+    expect(() => extractKey(randomBytes(32))).toThrow('userHandle is 32 bytes')
+  })
+
+  it('throws for a wrong prefix byte', () => {
+    const handle = new Uint8Array(KIH_USER_ID_SIZE)
+    handle[0] = 0x01
+    expect(() => extractKey(handle)).toThrow('Unrecognized userHandle format')
+  })
+
+  it('returns an independent copy (not a view)', () => {
+    const handle = makeKihHandle()
+    const key = extractKey(handle)
+    key[0] = 0xff
+    expect(handle[1]).not.toBe(0xff)
   })
 })

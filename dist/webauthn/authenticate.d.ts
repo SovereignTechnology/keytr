@@ -1,18 +1,38 @@
 import type { AuthenticateOptions, DiscoverOptions, DiscoverResult } from '../types.js';
 /**
- * Authenticate with an existing passkey and extract the encryption key
- * from the userHandle for decrypting the nsec.
+ * Authenticate with an existing PRF passkey and obtain the PRF output
+ * for decrypting the nsec.
  *
- * @returns 32-byte encryption key from userHandle
+ * @returns 32-byte PRF output for key derivation
  */
 export declare function authenticatePasskey(options: AuthenticateOptions): Promise<Uint8Array>;
 /**
- * Discoverable passkey authentication — no prior credential ID needed.
+ * Legacy KiH targeted authentication (decrypt-only).
  *
- * Single-step flow: empty allowCredentials triggers the passkey picker,
- * the authenticator returns the userHandle with the embedded encryption key.
+ * Used for existing Key-in-Handle credentials during login and migration.
+ * Extracts the 32-byte encryption key from the userHandle. No PRF extension.
  *
- * @returns The encryption key and credential ID
+ * @returns 32-byte encryption key from userHandle
+ */
+export declare function kihAuthenticatePasskey(options: AuthenticateOptions): Promise<Uint8Array>;
+/**
+ * Unified discoverable passkey authentication — no prior pubkey or credential
+ * ID needed. Auto-detects PRF (current) vs legacy KiH credentials.
+ *
+ * Step 1 — Discovery (no PRF): empty allowCredentials, browser shows the
+ *   passkey picker. Reads the userHandle.
+ *     • 33 bytes, 0x03 prefix → legacy KiH: the key is in the userHandle,
+ *       done in a single ceremony (no PRF step).
+ *     • 32 bytes → PRF: the userHandle is the pubkey; proceed to step 2.
+ *
+ * Step 2 (PRF only) — Targeted assertion WITH PRF: the discovered credentialId
+ *   goes into allowCredentials so the browser can evaluate the PRF extension.
+ *   This works around Safari iOS 18+ not returning PRF output on discovery
+ *   (empty allowCredentials) assertions.
+ *
+ * All WebAuthn calls route through the cached native get (natives.ts).
+ *
+ * @returns key material, credential ID, detected mode, and (PRF) the pubkey
  */
 export declare function discoverPasskey(options?: DiscoverOptions): Promise<DiscoverResult>;
 //# sourceMappingURL=authenticate.d.ts.map

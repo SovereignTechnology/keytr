@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
-import { buildKeytrEvent, parseKeytrEvent } from '../../src/nostr/event.js'
-import { KEYTR_EVENT_KIND, KEYTR_VERSION, type KeytrCredential } from '../../src/types.js'
+import { buildKeytrEvent, parseKeytrEvent, buildKeytrDeletionEvent } from '../../src/nostr/event.js'
+import { KEYTR_EVENT_KIND, KEYTR_VERSION, DELETION_EVENT_KIND, type KeytrCredential } from '../../src/types.js'
 import { base64url } from '@scure/base'
 
 describe('nostr event', () => {
@@ -66,5 +66,26 @@ describe('nostr event', () => {
       content: '',
       tags: [['d', credential.credentialIdBase64url]],
     })).toThrow('Missing "rp" tag')
+  })
+})
+
+describe('buildKeytrDeletionEvent', () => {
+  const pubkey = 'deadbeef'.repeat(8)
+  const dTag = 'Y3JlZDE'
+
+  it('builds a NIP-09 kind:5 event with the addressable a-tag', () => {
+    const del = buildKeytrDeletionEvent({ pubkey, dTag, eventId: 'evt123', reason: 'migrated' })
+    expect(del.kind).toBe(DELETION_EVENT_KIND)
+    expect(del.content).toBe('migrated')
+    expect(del.tags).toContainEqual(['a', `${KEYTR_EVENT_KIND}:${pubkey}:${dTag}`])
+    expect(del.tags).toContainEqual(['k', String(KEYTR_EVENT_KIND)])
+    expect(del.tags).toContainEqual(['e', 'evt123'])
+  })
+
+  it('omits the e-tag when no eventId is given and defaults content to empty', () => {
+    const del = buildKeytrDeletionEvent({ pubkey, dTag })
+    expect(del.content).toBe('')
+    expect(del.tags.find(t => t[0] === 'e')).toBeUndefined()
+    expect(del.tags).toContainEqual(['a', `${KEYTR_EVENT_KIND}:${pubkey}:${dTag}`])
   })
 })
