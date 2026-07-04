@@ -56,7 +56,7 @@ Given the nsec bytes, PRF output, and credential ID:
 1. Generate 12-byte random IV (AES-GCM nonce)
 2. Generate 32-byte random HKDF salt
 3. Derive AES-256 key via HKDF (above)
-4. Build AAD: `"keytr" || version_byte || credentialId` — this binds the ciphertext to a specific credential, version, and mode (`0x01` for PRF, `0x03` for KiH), preventing substitution/downgrade/cross-mode attacks
+4. Build AAD: `"keytr" || version_byte || credentialId` — this binds the ciphertext to a specific credential and version (`0x01` for PRF; `0x03` is the reserved legacy KiH version, recognized only on the decrypt path), preventing substitution/downgrade/cross-version attacks
 5. Encrypt: `AES-256-GCM(key, iv, nsec, aad)` → 48 bytes (32-byte nsec + 16-byte auth tag)
 6. Serialize into a 93-byte blob, then base64-encode
 
@@ -72,14 +72,14 @@ Source: `src/crypto/decrypt.ts`
 
 ```
 Offset  Length  Field
-0       1       Version byte (always 0x01 — blob format is identical for both modes)
+0       1       Version byte (always 0x01 — blob format is identical for PRF and legacy KiH blobs)
 1       12      IV (AES-GCM nonce)
 13      32      HKDF salt
 45      48      Ciphertext (32-byte nsec + 16-byte GCM auth tag)
 ────────────
 Total: 93 bytes → ~124 base64 characters
 
-Note: The blob version byte is always 0x01 (the binary format hasn't changed). Mode differentiation is via the AAD version byte (0x01 vs 0x03) and the event's `v` tag.
+Note: The blob version byte is always 0x01 (the binary format hasn't changed). PRF vs. legacy KiH is distinguished by the AAD version byte (0x01 vs 0x03) and the event's `v` tag — the 0x03 / `v=3` case only ever arises when decrypting an old KiH event.
 ```
 
 `serializeBlob()` packs the `EncryptedNsecBlob` struct into this binary layout. `deserializeBlob()` unpacks it with validation (checks version, total length).
@@ -103,9 +103,9 @@ Key functions:
 
 Source: `src/webauthn/prf.ts`
 
-### Key-in-Handle (KiH) Mode — legacy, decrypt-only
+### Legacy Key-in-Handle (KiH) — Decrypt-Only
 
-KiH is the **removed** legacy mode. It embedded a random 256-bit key directly in the passkey's `user.id` field:
+KiH is a **removed** legacy scheme, not a current mode. It embedded a random 256-bit key directly in the passkey's `user.id` field:
 
 ```
 user.id = [0x03 || random_key(32)]   — 33 bytes total
@@ -297,7 +297,7 @@ keytr uses **kind 31777** (parameterized replaceable event):
 | `rp` | Yes | WebAuthn Relying Party ID (domain). Clients need this to know which origin to use for decryption. |
 | `algo` | Yes | Encryption algorithm. MUST be `aes-256-gcm`. |
 | `kdf` | Yes | Key derivation function. MUST be `hkdf-sha256`. |
-| `v` | Yes | Protocol version. `1` = PRF (current). `3` = legacy KiH (deprecated, decrypt-only). |
+| `v` | Yes | Protocol version. `1` = PRF (current, the only specified mode). `3` = legacy KiH (decrypt-only, being removed). |
 | `transports` | No | WebAuthn authenticator transports (e.g., `internal`, `hybrid`, `usb`, `ble`, `nfc`). |
 | `client` | No | Name of the client that created this event. |
 
@@ -640,9 +640,15 @@ Without the browser's origin enforcement, native clients take on responsibility 
 
 ## Security Model
 
-PRF is the only registration mode. The table below describes PRF; the last column notes how the retained **legacy KiH decrypt** path compares.
+PRF (event/AAD version `v=1`) is the one and only current, specified encryption mode. The table below describes PRF; the last column notes how the retained **legacy KiH decrypt** path compares.
 
-| Property | PRF (current) | Legacy KiH (decrypt-only) |
+### Why not Key-in-Handle (KiH)?
+
+keytr briefly experimented with a Key-in-Handle (KiH) mode that stored the AES key inside the passkey's `user.id`. It was withdrawn in v0.8.0 as too risky: that key material was returned to page JavaScript as `userHandle` on every login, where a compromised page (XSS, a malicious extension, or a compromised dependency) could read it and decrypt the published ciphertext offline. PRF keeps the key inside the authenticator, so it is never exposed to page scripts.
+
+KiH now survives only as a decrypt-only path so existing `v=3` credentials can be recognized and migrated to PRF (see `migrateFromKih()` in Layer 4), and is being removed. See [SECURITY.md](../SECURITY.md) for the full advisory.
+
+| Property | PRF (current) | Legacy KiH (decrypt-only, being removed) |
 |----------|---------------|---------------------------|
 | **Key source** | PRF output — hardware-bound, derived on-device, never stored in `user.id` | Random 256-bit key stored in `user.id`; returned as `userHandle` at login, so recoverable in JS memory |
 | **Origin-bound** | PRF output tied to rpId | Passkey still bound to rpId; key only released on valid assertion |
