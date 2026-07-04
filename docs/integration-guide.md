@@ -8,7 +8,7 @@ The canonical implementation of these patterns is [BIES's keytrService.js](https
 
 ## The Three-Tier Login Pattern
 
-keytr exposes two login primitives: `loginWithKeytr(events)` (known credential) and `discover(relays)` (discoverable, auto-detects PRF vs KiH). A production client should combine these into a **three-tier fallback** that gets faster over time as it builds a local credential index:
+keytr exposes two login primitives: `loginWithKeytr(events)` (known credential) and `discover(relays)` (discoverable). A production client should combine these into a **three-tier fallback** that gets faster over time as it builds a local credential index:
 
 ```
 Tier 1: Credential index (app-managed)
@@ -29,14 +29,14 @@ Every tier ends with a single biometric prompt. The difference is **how the clie
 
 ### Why three tiers?
 
-Discoverable login (`discover`) works from zero state, but it's the slowest path — it triggers a WebAuthn discovery assertion, auto-detects the mode (PRF vs KiH), then fetches the encrypted event from relays. If the client already knows the pubkey (from its own user store or a credential index), it can skip discovery and go straight to a targeted relay query with a single assertion.
+Discoverable login (`discover`) works from zero state, but it's the slowest path — it triggers a WebAuthn discovery assertion, then fetches the encrypted event from relays. If the client already knows the pubkey (from its own user store or a credential index), it can skip discovery and go straight to a targeted relay query with a single assertion.
 
 The three-tier pattern means:
 - **First login** on a new device hits tier 3 (discoverable). Slow but works.
 - **Second login** hits tier 1 or 2 (indexed). Fast.
 - **Login after clearing keytr data but not app data** hits tier 2 (app's user store). Still fast.
 
-**Note on KiH mode**: Tiers 1 and 2 (known pubkey → `fetchKeytrEvents` → `loginWithKeytr`) only work for PRF-mode credentials. KiH credentials don't store the pubkey in `userHandle`, so they always go through tier 3 (discoverable). The `discover()` API handles this automatically.
+**Note on legacy KiH credentials**: Tiers 1 and 2 (known pubkey → `fetchKeytrEvents` → `loginWithKeytr`) rely on the pubkey living in `userHandle`, which PRF credentials — the only kind keytr now creates — always carry. Legacy KiH credentials (registered before v0.8.0) don't store the pubkey there, so they always fall through to tier 3 (discoverable); `discover()` handles them automatically until the user migrates.
 
 ---
 
@@ -93,11 +93,9 @@ function removeFromIndex(pubkey) {
 
 ---
 
-## The userHandle: Mode Detection
+## The userHandle
 
-During passkey registration, keytr stores different data in the WebAuthn `user.id` depending on the mode:
-
-### PRF mode (32 bytes)
+During passkey registration, keytr stores the raw 32-byte x-only Nostr public key in the WebAuthn `user.id`:
 
 ```
 userHandle = raw 32-byte x-only Nostr public key
@@ -105,30 +103,18 @@ userHandle = raw 32-byte x-only Nostr public key
 
 This is the same value as the `pubkey` field in Nostr events, just in raw bytes instead of hex. The pubkey enables relay lookup by author during discoverable login.
 
-### KiH mode (33 bytes)
-
-```
-userHandle = [0x03 || random_key(32)]
-```
-
-The first byte (`0x03`) is a mode marker. The remaining 32 bytes are the encryption key. No pubkey is stored — it's recovered by deriving from the nsec after decryption.
-
-### Mode detection
-
-keytr detects the mode from the `userHandle` length:
-- **32 bytes** → PRF mode (pubkey)
-- **33 bytes, byte[0] === 0x03** → KiH mode (encryption key)
-
-The unified `discover()` API (and the lower-level `discoverPasskey()`) handles this automatically. Apps should not need to inspect `userHandle` directly.
-
 ### How apps should use it
 
-After a successful `discover()` call, the returned `pubkey` is available regardless of mode (KiH derives it after decryption). Use it for:
+After a successful `discover()` call, the returned `pubkey` is available for:
 
-1. **Credential indexing**: Store the pubkey so future PRF-mode logins can skip discovery.
+1. **Credential indexing**: Store the pubkey so future logins can skip discovery.
 2. **User identification**: Load the user's profile, check session state.
 
-For KiH-mode credentials, relay lookup uses `#d` tag queries instead of pubkey author queries — this is handled internally by `discover()`.
+Apps should not need to inspect `userHandle` directly — `discover()` (and the lower-level `discoverPasskey()`) returns the pubkey for you.
+
+### Legacy KiH credentials
+
+Credentials registered before v0.8.0 used a 33-byte `userHandle` (`[0x03 || key]`) that carried an encryption key rather than the pubkey, so they can't be located by author query and always fall back to discoverable login (`#d`-tag lookup), with the pubkey recovered after decryption. `discover()` detects and decrypts them automatically until the user migrates — see [Migrating legacy KiH users](#migrating-legacy-kih-users). New registrations are always PRF.
 
 ---
 
@@ -216,7 +202,7 @@ async function loginWithPasskey() {
     }
   } catch { /* fall through to discoverable */ }
 
-  // ── Tier 3: discoverable (auto-detects PRF vs KiH) ────────────
+  // ── Tier 3: discoverable (cold start) ─────────────────────────
   const { nsecBytes, pubkey } = await discover(RELAYS)
   try {
     // Auto-upgrade: index the credential for tier 1 next time
@@ -389,7 +375,9 @@ This creates a second kind:31777 event with a different `d` tag (different crede
 
 ### Migrating legacy KiH users
 
-Users who registered before v0.8.0 may have a KiH (`v=3`) credential. They can still log in via `discover()`/`loginWithKeytr()`, but KiH is deprecated and decryption will be removed in a future release — offer them a one-tap upgrade to PRF:
+keytr briefly experimented with a Key-in-Handle (KiH) mode that stored the AES key inside the passkey's `user.id`. It was withdrawn in v0.8.0 as too risky: that key material was returned to page JavaScript as `userHandle` on every login, where a compromised page (XSS, a malicious extension, or a compromised dependency) could read it and decrypt the published ciphertext offline. PRF keeps the key inside the authenticator, so it is never exposed to page scripts.
+
+Users who registered before v0.8.0 may still have a KiH (`v=3`) credential. They can keep logging in via `discover()`/`loginWithKeytr()` — the library continues to decrypt legacy `v=3` events — but KiH is deprecated and decryption will be removed in a future release, so offer them a one-tap upgrade to PRF:
 
 ```javascript
 import { migrateFromKih } from '@sovit.xyz/keytr'

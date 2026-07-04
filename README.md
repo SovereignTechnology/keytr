@@ -14,7 +14,7 @@ Passkey PRF → HKDF-SHA256 → AES-256-GCM → kind:31777 (v=1) → relay
 
 **PRF is required — there is no fallback.** An authenticator without the PRF extension (Firefox on Android, some older security keys, and password-manager extensions that don't expose PRF to keytr) cannot register: `setup()` throws `PrfNotSupportedError`. keytr ships no password or local-only fallback, so this is a deliberate compatibility trade-off — see [Compatibility](#compatibility).
 
-> **Legacy Key-in-Handle (KiH):** earlier versions supported a KiH mode that stored a random encryption key in `user.id`. **KiH registration was removed in v0.8.0** — the key was interceptable in JS memory. Existing KiH credentials (`v=3` events) can still log in via `discover()`/`loginWithKeytr()` and should upgrade with [`migrateFromKih()`](#migration-legacy-kih--prf). KiH decryption will be removed in a future release.
+> **History — the withdrawn KiH mode.** keytr briefly experimented with a Key-in-Handle (KiH) mode that stored the AES key inside the passkey's `user.id`. It was **withdrawn in v0.8.0 as too risky**: that key material was returned to page JavaScript as `userHandle` on every login, where a compromised page (XSS, a malicious extension, or a compromised dependency) could read it and decrypt the published ciphertext offline. PRF keeps the key inside the authenticator, so it is never exposed to page scripts. Existing KiH credentials (`v=3` events) can still log in and should upgrade with [`migrateFromKih()`](#migration-legacy-kih--prf); KiH decryption is retained only for that migration and will be removed in a future release.
 
 Cross-client login works via a [federated gateway model](docs/architecture.md#federated-gateway-model) — any domain can authorize a set of Nostr clients to share passkey access using WebAuthn [Related Origin Requests](https://w3c.github.io/webauthn/#sctn-related-origins). The two official gateways (`keytr.org` on Cloudflare, `nostkey.org` on Hostinger) trust each other bidirectionally, so a passkey registered under either rpId works on both sites and all authorized client origins.
 
@@ -23,7 +23,7 @@ Cross-client login works via a [federated gateway model](docs/architecture.md#fe
 - [Architecture & System Design](docs/architecture.md) — detailed walkthrough of every layer: crypto, WebAuthn, Nostr integration, federated gateways, security model
 - [Integration Guide](docs/integration-guide.md) — how to wire keytr into a Nostr client's auth flow, session restore, and credential management
 - [Roadmap](docs/roadmap.md) — current state and future direction
-- [NIP-K1 Specification](NIP-K1.md) — the canonical protocol spec (PRF `v=1`; KiH `v=3` retained decrypt-only, deprecated for new registrations)
+- [NIP-K1 Specification](NIP-K1.md) — the canonical protocol spec (PRF `v=1` is the only specified mode; legacy KiH `v=3` retained decrypt-only for migration)
 
 ## Install
 
