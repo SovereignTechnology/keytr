@@ -74,3 +74,7 @@ Upgrade to `@sovit.xyz/keytr@0.8.0` and run **`migrateFromKih()`**, which
 re-encrypts your nsec under a new PRF passkey, publishes the new `v=1` event, and
 issues a NIP-09 deletion for the old KiH event. KiH decryption still works in
 0.8.0 to enable this migration and will be removed in a future release.
+
+## Typed recovery payloads (draft)
+
+The proposed [typed recovery APIs](docs/typed-recovery.md) increase the recovery scope from one key to application-owned seed/vault bytes. Version, payload type, schema, RP, event author and credential ID are authenticated. Signature validation precedes credential prompts for known events. Applications must validate their own decrypted schemas and identities, preserve import safeguards and explain public metadata, stale snapshots and retained ciphertext. PRF output reaches application JavaScript; this does not protect against compromise of the client origin. No password or KiH fallback is introduced.

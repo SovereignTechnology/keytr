@@ -121,4 +121,7 @@ export declare function discover(relays: string[], options?: DiscoverOptions & {
     relayOptions?: RelayOptions;
     strategy?: KeyStrategy;
 }): Promise<DiscoverLoginResult>;
+export { encryptPayload, decryptPayload, PAYLOAD_VERSION, MAX_PAYLOAD_BYTES, type PayloadType, type PayloadContext, type EncryptPayloadOptions, type DecryptPayloadOptions } from './crypto/payload.js';
+export { buildPayloadEvent, parsePayloadEvent, verifyPayloadEvent, payloadDTag } from './nostr/payload.js';
+export { setupPayload, unlockPayload, discoverPayload } from './payload.js';
 //# sourceMappingURL=index.d.ts.map

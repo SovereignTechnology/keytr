@@ -254,6 +254,8 @@ export async function loginWithKeytr(events: {
   let lastError: Error | undefined
 
   for (const event of events) {
+    // Typed recovery is opt-in; do not parse its namespaced coordinate as an nsec ID.
+    if (event.tags.some(tag => tag[0] === 'v' && tag[1] === '4')) continue
     const parsed = _parseEvent(event)
 
     // Choose the authenticate function by event version (or a custom override).
@@ -452,3 +454,8 @@ export async function discover(
     safeZero(result.keyMaterial)
   }
 }
+
+// Draft typed PRF recovery: explicit APIs leave the existing nsec flows unchanged.
+export { encryptPayload, decryptPayload, PAYLOAD_VERSION, MAX_PAYLOAD_BYTES, type PayloadType, type PayloadContext, type EncryptPayloadOptions, type DecryptPayloadOptions } from './crypto/payload.js'
+export { buildPayloadEvent, parsePayloadEvent, verifyPayloadEvent, payloadDTag } from './nostr/payload.js'
+export { setupPayload, unlockPayload, discoverPayload } from './payload.js'

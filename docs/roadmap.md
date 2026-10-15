@@ -128,3 +128,7 @@ Many fundamental design decisions remain unresolved:
 - Naming: the public API naming should communicate "your passkey becomes your key" without jargon
 
 NIP-K1 is the focus. K2 would only be considered after K1 is mature and battle-tested.
+
+## Draft: typed recovery
+
+An opt-in [seed and vault payload proposal](typed-recovery.md) is available for protocol and API review. Wire version, schema interoperability and real-provider integration still need agreement and testing before treating this as a deployed ecosystem standard.

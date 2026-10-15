@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- Add draft PRF-encrypted seed/vault payload APIs with authenticated type/schema metadata and separate event coordinates, preserving existing single-key recovery.
+
 All notable changes to this project will be documented in this file.
 
 This project follows [Semantic Versioning](https://semver.org/).

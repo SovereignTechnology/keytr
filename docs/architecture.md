@@ -871,3 +871,7 @@ src/
 ```
 
 (KiH registration was removed — there is no `register-kih.ts`.)
+
+## Typed recovery extension
+
+The opt-in [typed recovery layer](typed-recovery.md) reuses PRF registration, authentication and relay transport. Dedicated payload crypto uses version 4, a separate HKDF context and context-bound AAD. Separate event coordinates preserve v1 private-key records. Application serialization and import remain outside the library.

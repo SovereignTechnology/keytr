@@ -25,6 +25,10 @@ Cross-client login works via a [federated gateway model](docs/architecture.md#fe
 - [Roadmap](docs/roadmap.md) — current state and future direction
 - [NIP-K1 Specification](NIP-K1.md) — the canonical protocol spec (PRF `v=1` is the only specified mode; legacy KiH `v=3` retained decrypt-only for migration)
 
+## Typed recovery (draft)
+
+Applications can use the proposed `setupPayload`, `unlockPayload` and `discoverPayload` APIs to transport an encrypted seed or multi-account vault. Existing private-key flows stay unchanged. Payload types and application schemas are authenticated; applications must agree on a schema to restore each other’s data. See the [wire format and integration examples](docs/typed-recovery.md).
+
 ## Install
 
 ```bash

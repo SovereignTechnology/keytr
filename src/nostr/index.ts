@@ -17,3 +17,4 @@ export {
   type DeletionEventTemplate,
 } from './event.js'
 export { publishKeytrEvent, fetchKeytrEvents, fetchKeytrEventByDTag, type RelayOptions } from './relay.js'
+export { buildPayloadEvent, parsePayloadEvent, verifyPayloadEvent, payloadDTag } from './payload.js'

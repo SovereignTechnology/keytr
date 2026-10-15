@@ -621,3 +621,7 @@ Integration checklist for client developers:
 - [ ] **Backup flags**: Check `credential.backupEligible` and warn if the passkey won't sync
 - [ ] **Signal API**: Call `signalUnknownCredential()` when users revoke passkeys
 - [ ] **Gateway origin**: Submit a PR to add your domain to the gateway's `/.well-known/webauthn`
+
+## Seed and full-vault recovery
+
+For multi-account or seed recovery, use the dedicated [typed recovery APIs and examples](typed-recovery.md). Choose an explicit application schema, validate decrypted contents before import, and retain normal overwrite/merge confirmations. Existing `setup` and `discover` remain private-key APIs; they do not auto-import vault payloads.
