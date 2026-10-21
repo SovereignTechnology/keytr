@@ -7,6 +7,14 @@ import type { AuthenticateOptions, DiscoverOptions, DiscoverResult } from '../ty
  */
 export declare function authenticatePasskey(options: AuthenticateOptions): Promise<Uint8Array>;
 /**
+ * Targeted assertion that evaluates the PRF with a chosen input. keytr v1
+ * uses "keytr-v1" (authenticatePasskey); stored npk1 records use
+ * NPK_STORE_PRF_INPUT.
+ *
+ * @returns 32-byte PRF output
+ */
+export declare function authenticatePrf(options: AuthenticateOptions, prfInput: Uint8Array): Promise<Uint8Array>;
+/**
  * Legacy KiH targeted authentication (decrypt-only).
  *
  * Used for existing Key-in-Handle credentials during login and migration.
@@ -35,4 +43,15 @@ export declare function kihAuthenticatePasskey(options: AuthenticateOptions): Pr
  * @returns key material, credential ID, detected mode, and (PRF) the pubkey
  */
 export declare function discoverPasskey(options?: DiscoverOptions): Promise<DiscoverResult>;
+/**
+ * Discoverable assertion for stored npk1 passkeys: asks for the stored-mode
+ * PRF output in the same ceremony and returns the raw handle without
+ * interpreting it. `prfOutput` is null when the platform did not evaluate the
+ * PRF here (many do not with empty allowCredentials); use authenticatePrf().
+ */
+export declare function discoverStoredPasskey(options?: DiscoverOptions): Promise<{
+    credentialId: Uint8Array;
+    userHandle: Uint8Array | null;
+    prfOutput: Uint8Array | null;
+}>;
 //# sourceMappingURL=authenticate.d.ts.map

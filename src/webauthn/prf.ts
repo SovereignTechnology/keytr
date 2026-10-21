@@ -3,13 +3,13 @@ import { PRF_SALT } from '../types.js'
 /**
  * Build the PRF extension input for credential creation (registration).
  * During registration, we use `eval` to test if PRF is supported
- * and get the first PRF output.
+ * and get the first PRF output. `input` defaults to keytr's "keytr-v1".
  */
-export function prfRegistrationExtension(): AuthenticationExtensionsClientInputs {
+export function prfRegistrationExtension(input: Uint8Array = PRF_SALT): AuthenticationExtensionsClientInputs {
   return {
     prf: {
       eval: {
-        first: PRF_SALT.buffer as ArrayBuffer,
+        first: input.slice().buffer as ArrayBuffer,
       },
     },
   } as AuthenticationExtensionsClientInputs
@@ -18,13 +18,13 @@ export function prfRegistrationExtension(): AuthenticationExtensionsClientInputs
 /**
  * Build the PRF extension input for credential assertion (authentication).
  * During authentication, we use `eval` to get the PRF output
- * for deriving the encryption/decryption key.
+ * for deriving the encryption/decryption key. `input` defaults to "keytr-v1".
  */
-export function prfAuthenticationExtension(): AuthenticationExtensionsClientInputs {
+export function prfAuthenticationExtension(input: Uint8Array = PRF_SALT): AuthenticationExtensionsClientInputs {
   return {
     prf: {
       eval: {
-        first: PRF_SALT.buffer as ArrayBuffer,
+        first: input.slice().buffer as ArrayBuffer,
       },
     },
   } as AuthenticationExtensionsClientInputs

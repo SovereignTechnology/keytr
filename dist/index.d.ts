@@ -1,6 +1,6 @@
 export type { KeytrCredential, EncryptedNsecBlob, KeytrEventTemplate, EncryptOptions, DecryptOptions, RegisterOptions, RegisterResult, AuthenticateOptions, DiscoverOptions, DiscoverResult, KeytrBundle, KeyStrategy, KeytrMode, PrfSupportInfo, WebAuthnCapabilities, } from './types.js';
 export { KEYTR_VERSION, KEYTR_KIH_VERSION, BLOB_VERSION, KEYTR_EVENT_KIND, DELETION_EVENT_KIND, DEFAULT_RP_ID, DEFAULT_RP_NAME, KEYTR_GATEWAYS, KIH_KEY_SIZE, KIH_USER_ID_SIZE, KIH_MODE_BYTE, PRF_USER_ID_SIZE, } from './types.js';
-export { KeytrError, PrfNotSupportedError, KihRegistrationDisabledError, EncryptionError, DecryptionError, BlobParseError, WebAuthnError, RelayError, } from './errors.js';
+export { KeytrError, PrfNotSupportedError, KihRegistrationDisabledError, EncryptionError, DecryptionError, BlobParseError, WebAuthnError, RelayError, PasskeyModeError, } from './errors.js';
 export { encryptNsec, buildAad } from './crypto/encrypt.js';
 export { decryptNsec } from './crypto/decrypt.js';
 export { deriveKey } from './crypto/kdf.js';
@@ -124,4 +124,8 @@ export declare function discover(relays: string[], options?: DiscoverOptions & {
 export { encryptPayload, decryptPayload, PAYLOAD_VERSION, MAX_PAYLOAD_BYTES, type PayloadType, type PayloadContext, type EncryptPayloadOptions, type DecryptPayloadOptions } from './crypto/payload.js';
 export { buildPayloadEvent, parsePayloadEvent, verifyPayloadEvent, payloadDTag } from './nostr/payload.js';
 export { setupPayload, unlockPayload, discoverPayload } from './payload.js';
+export { classifyHandle, type HandleClassification } from './webauthn/handle.js';
+export { NPK_STORE_PRF_INPUT } from './crypto/npk.js';
+export { npkSecretKeys, type NpkSecret, type NpkSeed, type NpkVault, type NpkAccount, type NpkSecretKey } from './crypto/npk-secret.js';
+export { setupStored, discoverStored, decryptStoredSecret, type StoredLoginResult } from './stored.js';
 //# sourceMappingURL=index.d.ts.map

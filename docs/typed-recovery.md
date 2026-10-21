@@ -88,4 +88,6 @@ Only the authenticator's internal secret stays inside it: PRF output and decrypt
 
 Events expose author, credential identifier, type, schema, RP, size and timing. A full-vault compromise can expose multiple identities and other stored credentials. Updating or deleting an addressable event cannot erase older copies from relays. Snapshot freshness, rotation, revocation and recovery availability remain application responsibilities. Reject oversize data rather than truncating it. The library's 64 KiB plaintext bound does not imply every relay accepts that event size; keep file export or another explicit recovery route available.
 
+The [Passkey-held Nostr keys](passkey-key-modes.md) format (`npk1`) defines its own `seed` and `vault` JSON with a separate PRF input, record layout and `d` coordinate, so it does not collide with v4 events.
+
 The demo remains a single-account login UI. This proposal adds library APIs and a wire-format draft, not automatic vault import into that UI. Real authenticator synchronization and external-client schema compatibility require separate integration testing.

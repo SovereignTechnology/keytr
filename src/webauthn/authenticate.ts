@@ -1,9 +1,10 @@
 import { bytesToHex } from '@noble/hashes/utils.js'
 import type { AuthenticateOptions, DiscoverOptions, DiscoverResult } from '../types.js'
-import { DEFAULT_RP_ID } from '../types.js'
+import { DEFAULT_RP_ID, PRF_SALT } from '../types.js'
 import { WebAuthnError, PrfNotSupportedError } from '../errors.js'
 import { prfAuthenticationExtension, extractPrfOutput } from './prf.js'
 import { detectMode, extractKey } from './kih.js'
+import { NPK_STORE_PRF_INPUT } from '../crypto/npk.js'
 import { ensureBrowser } from './support.js'
 import { nativeGet } from './natives.js'
 
@@ -19,6 +20,20 @@ function getNative(): typeof navigator.credentials.get {
  */
 export async function authenticatePasskey(
   options: AuthenticateOptions
+): Promise<Uint8Array> {
+  return authenticatePrf(options, PRF_SALT)
+}
+
+/**
+ * Targeted assertion that evaluates the PRF with a chosen input. keytr v1
+ * uses "keytr-v1" (authenticatePasskey); stored npk1 records use
+ * NPK_STORE_PRF_INPUT.
+ *
+ * @returns 32-byte PRF output
+ */
+export async function authenticatePrf(
+  options: AuthenticateOptions,
+  prfInput: Uint8Array
 ): Promise<Uint8Array> {
   ensureBrowser()
 
@@ -36,7 +51,7 @@ export async function authenticatePasskey(
     ],
     userVerification: 'required',
     timeout: options.timeout ?? 120000,
-    extensions: prfAuthenticationExtension(),
+    extensions: prfAuthenticationExtension(prfInput),
   }
 
   if (options.hints?.length) {
@@ -154,30 +169,7 @@ export async function discoverPasskey(
   const get = getNative()
 
   // Step 1: Discovery — no PRF, empty allowCredentials
-  const pubKeyOptions: PublicKeyCredentialRequestOptions = {
-    rpId,
-    challenge: crypto.getRandomValues(new Uint8Array(32)),
-    allowCredentials: [],
-    userVerification: 'required',
-    timeout,
-  }
-
-  if (options?.hints?.length) {
-    ;(pubKeyOptions as any).hints = options.hints
-  }
-
-  const discoveryOptions: CredentialRequestOptions = { publicKey: pubKeyOptions }
-  if (options?.mediation) discoveryOptions.mediation = options.mediation
-
-  let assertion: PublicKeyCredential
-  try {
-    const result = await get(discoveryOptions)
-    if (!result) throw new WebAuthnError('Discoverable authentication returned null')
-    assertion = result as PublicKeyCredential
-  } catch (err) {
-    if (err instanceof WebAuthnError) throw err
-    throw new WebAuthnError(`Discoverable passkey authentication failed: ${(err as Error).message}`)
-  }
+  const assertion = await discoveryAssertion(options)
 
   const response = assertion.response as AuthenticatorAssertionResponse
   if (!response.userHandle || response.userHandle.byteLength === 0) {
@@ -234,4 +226,54 @@ export async function discoverPasskey(
   }
 
   return { keyMaterial: prfOutput, credentialId, mode: 'prf', pubkey }
+}
+
+/** Discoverable assertion with empty allowCredentials, optionally asking for the PRF in the same ceremony. */
+async function discoveryAssertion(options?: DiscoverOptions, prfInput?: Uint8Array): Promise<PublicKeyCredential> {
+  const pubKeyOptions: PublicKeyCredentialRequestOptions = {
+    rpId: options?.rpId ?? DEFAULT_RP_ID,
+    challenge: crypto.getRandomValues(new Uint8Array(32)),
+    allowCredentials: [],
+    userVerification: 'required',
+    timeout: options?.timeout ?? 120000,
+  }
+  if (prfInput) pubKeyOptions.extensions = prfAuthenticationExtension(prfInput)
+
+  if (options?.hints?.length) {
+    ;(pubKeyOptions as any).hints = options.hints
+  }
+
+  const discoveryOptions: CredentialRequestOptions = { publicKey: pubKeyOptions }
+  if (options?.mediation) discoveryOptions.mediation = options.mediation
+
+  try {
+    const result = await getNative()(discoveryOptions)
+    if (!result) throw new WebAuthnError('Discoverable authentication returned null')
+    return result as PublicKeyCredential
+  } catch (err) {
+    if (err instanceof WebAuthnError) throw err
+    throw new WebAuthnError(`Discoverable passkey authentication failed: ${(err as Error).message}`)
+  }
+}
+
+/**
+ * Discoverable assertion for stored npk1 passkeys: asks for the stored-mode
+ * PRF output in the same ceremony and returns the raw handle without
+ * interpreting it. `prfOutput` is null when the platform did not evaluate the
+ * PRF here (many do not with empty allowCredentials); use authenticatePrf().
+ */
+export async function discoverStoredPasskey(options?: DiscoverOptions): Promise<{
+  credentialId: Uint8Array
+  userHandle: Uint8Array | null
+  prfOutput: Uint8Array | null
+}> {
+  ensureBrowser()
+  const assertion = await discoveryAssertion(options, NPK_STORE_PRF_INPUT)
+  const handle = (assertion.response as AuthenticatorAssertionResponse).userHandle
+  const output = extractPrfOutput(assertion.getClientExtensionResults())
+  return {
+    credentialId: new Uint8Array(assertion.rawId),
+    userHandle: handle && handle.byteLength > 0 ? new Uint8Array(handle) : null,
+    prfOutput: output && output.length === 32 ? output : null,
+  }
 }

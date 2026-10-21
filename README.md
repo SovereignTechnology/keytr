@@ -29,6 +29,10 @@ Cross-client login works via a [federated gateway model](docs/architecture.md#fe
 
 Applications can use the proposed `setupPayload`, `unlockPayload` and `discoverPayload` APIs to transport an encrypted seed or multi-account vault. Existing private-key flows stay unchanged. Payload types and application schemas are authenticated; applications must agree on a schema to restore each other’s data. See the [wire format and integration examples](docs/typed-recovery.md).
 
+## Passkey-held Nostr keys (draft)
+
+`setupStored()` and `discoverStored()` read and write the stored-mode format of the [Passkey-held Nostr keys](<SPEC_URL>) proposal (`npk1`): tagged handles and records holding a key, a seed or a vault. Passkeys that derive their key directly, or that keytr cannot identify, are refused with `PasskeyModeError` instead of becoming a new empty identity. See [Passkey key modes](docs/passkey-key-modes.md).
+
 ## Install
 
 ```bash

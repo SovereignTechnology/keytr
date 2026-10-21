@@ -16,4 +16,12 @@ import type { RegisterOptions, RegisterResult } from '../types.js';
  * resist monkey-patching (POC-1).
  */
 export declare function registerPasskey(options: RegisterOptions): Promise<RegisterResult>;
+/**
+ * Register a passkey with a tagged stored handle ("NPK" || 0x01 || 0x02 || author)
+ * and evaluate the PRF with the stored-mode input SHA-256("nostr-passkey:store:v1").
+ * The output is for an npk1 record and unrelated to the "keytr-v1" output.
+ */
+export declare function registerStoredPasskey(options: Omit<RegisterOptions, 'pubkey'> & {
+    author: string;
+}): Promise<RegisterResult>;
 //# sourceMappingURL=register.d.ts.map

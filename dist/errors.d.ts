@@ -32,4 +32,13 @@ export declare class WebAuthnError extends KeytrError {
 export declare class RelayError extends KeytrError {
     constructor(message: string);
 }
+/**
+ * A passkey keytr refuses after classifying its handle (passkey-held Nostr
+ * keys proposal). keytr only reads and writes stored mode, so it never
+ * computes a key from these passkeys or turns them into a new identity.
+ */
+export declare class PasskeyModeError extends KeytrError {
+    readonly reason: 'derived' | 'unsupported' | 'unknown' | 'record-not-found';
+    constructor(reason: 'derived' | 'unsupported' | 'unknown' | 'record-not-found', detail?: string);
+}
 //# sourceMappingURL=errors.d.ts.map

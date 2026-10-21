@@ -1,6 +1,6 @@
 export { KEYTR_VERSION, KEYTR_KIH_VERSION, BLOB_VERSION, KEYTR_EVENT_KIND, DELETION_EVENT_KIND, DEFAULT_RP_ID, DEFAULT_RP_NAME, KEYTR_GATEWAYS, KIH_KEY_SIZE, KIH_USER_ID_SIZE, KIH_MODE_BYTE, PRF_USER_ID_SIZE, } from './types.js';
 // Errors
-export { KeytrError, PrfNotSupportedError, KihRegistrationDisabledError, EncryptionError, DecryptionError, BlobParseError, WebAuthnError, RelayError, } from './errors.js';
+export { KeytrError, PrfNotSupportedError, KihRegistrationDisabledError, EncryptionError, DecryptionError, BlobParseError, WebAuthnError, RelayError, PasskeyModeError, } from './errors.js';
 // Crypto
 export { encryptNsec, buildAad } from './crypto/encrypt.js';
 export { decryptNsec } from './crypto/decrypt.js';
@@ -148,8 +148,8 @@ export async function loginWithKeytr(events, strategy) {
     }
     let lastError;
     for (const event of events) {
-        // Typed recovery is opt-in; do not parse its namespaced coordinate as an nsec ID.
-        if (event.tags.some(tag => tag[0] === 'v' && tag[1] === '4'))
+        // Typed recovery (v4) and npk1 records are opt-in; do not parse their coordinates as an nsec ID.
+        if (event.tags.some(tag => tag[0] === 'v' && (tag[1] === '4' || tag[1] === 'npk1')))
             continue;
         const parsed = _parseEvent(event);
         // Choose the authenticate function by event version (or a custom override).
@@ -304,4 +304,9 @@ export async function discover(relays, options) {
 export { encryptPayload, decryptPayload, PAYLOAD_VERSION, MAX_PAYLOAD_BYTES } from './crypto/payload.js';
 export { buildPayloadEvent, parsePayloadEvent, verifyPayloadEvent, payloadDTag } from './nostr/payload.js';
 export { setupPayload, unlockPayload, discoverPayload } from './payload.js';
+// Passkey-held Nostr keys (npk1 stored records, tagged handles): opt-in APIs next to v1.
+export { classifyHandle } from './webauthn/handle.js';
+export { NPK_STORE_PRF_INPUT } from './crypto/npk.js';
+export { npkSecretKeys } from './crypto/npk-secret.js';
+export { setupStored, discoverStored, decryptStoredSecret } from './stored.js';
 //# sourceMappingURL=index.js.map

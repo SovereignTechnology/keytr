@@ -42,6 +42,7 @@ export {
   BlobParseError,
   WebAuthnError,
   RelayError,
+  PasskeyModeError,
 } from './errors.js'
 
 // Crypto
@@ -254,8 +255,8 @@ export async function loginWithKeytr(events: {
   let lastError: Error | undefined
 
   for (const event of events) {
-    // Typed recovery is opt-in; do not parse its namespaced coordinate as an nsec ID.
-    if (event.tags.some(tag => tag[0] === 'v' && tag[1] === '4')) continue
+    // Typed recovery (v4) and npk1 records are opt-in; do not parse their coordinates as an nsec ID.
+    if (event.tags.some(tag => tag[0] === 'v' && (tag[1] === '4' || tag[1] === 'npk1'))) continue
     const parsed = _parseEvent(event)
 
     // Choose the authenticate function by event version (or a custom override).
@@ -459,3 +460,9 @@ export async function discover(
 export { encryptPayload, decryptPayload, PAYLOAD_VERSION, MAX_PAYLOAD_BYTES, type PayloadType, type PayloadContext, type EncryptPayloadOptions, type DecryptPayloadOptions } from './crypto/payload.js'
 export { buildPayloadEvent, parsePayloadEvent, verifyPayloadEvent, payloadDTag } from './nostr/payload.js'
 export { setupPayload, unlockPayload, discoverPayload } from './payload.js'
+
+// Passkey-held Nostr keys (npk1 stored records, tagged handles): opt-in APIs next to v1.
+export { classifyHandle, type HandleClassification } from './webauthn/handle.js'
+export { NPK_STORE_PRF_INPUT } from './crypto/npk.js'
+export { npkSecretKeys, type NpkSecret, type NpkSeed, type NpkVault, type NpkAccount, type NpkSecretKey } from './crypto/npk-secret.js'
+export { setupStored, discoverStored, decryptStoredSecret, type StoredLoginResult } from './stored.js'
