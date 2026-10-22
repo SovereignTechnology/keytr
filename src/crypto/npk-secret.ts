@@ -1,3 +1,4 @@
+import { strictJson } from './strict-json.js'
 import { getPublicKey } from 'nostr-tools/pure'
 import { HDKey } from '@scure/bip32'
 import { entropyToMnemonic, mnemonicToSeedSync } from '@scure/bip39'
@@ -33,7 +34,7 @@ export interface NpkAccount {
   path?: string
   secret?: string
   label?: string
-  /** The account the user normally uses. At most one per vault. */
+  /** The account the user normally uses. The first usable default is selected. */
   default?: boolean
   [field: string]: unknown
 }
@@ -42,7 +43,7 @@ export interface NpkVault {
   seed?: NpkSeed
   accounts: NpkAccount[]
   /** Application data keyed by reverse-DNS identifier */
-  ext?: Record<string, Record<string, unknown>>
+  ext?: Record<string, unknown>
   [field: string]: unknown
 }
 
@@ -68,7 +69,7 @@ const isObject = (value: unknown): value is Record<string, any> =>
 
 const isPath = (path: unknown): path is string =>
   typeof path === 'string' && /^m\/44'\/1237'(\/(0|[1-9][0-9]{0,9})'?)+$/.test(path) &&
-  path.split('/').slice(1).every(level => parseInt(level, 10) < 0x80000000)
+  path.split('/').length <= 256 && path.split('/').slice(1).every(level => parseInt(level, 10) < 0x80000000)
 
 function isSecretHex(value: unknown): boolean {
   if (typeof value !== 'string' || !/^[0-9a-f]{64}$/.test(value)) return false
@@ -87,23 +88,8 @@ function validateVault(vault: unknown): void {
   if (!isObject(vault)) throw new KeytrError('vault must be an object')
   if (vault.seed !== undefined) validateSeed(vault.seed, 'vault.seed')
   if (!Array.isArray(vault.accounts) || vault.accounts.length === 0) throw new KeytrError('vault.accounts must hold at least one account')
-  let defaults = 0
-  vault.accounts.forEach((account: unknown, i: number) => {
-    const where = `vault.accounts[${i}]`
-    if (!isObject(account) || typeof account.kind !== 'string') throw new KeytrError(`${where} must be an object with a kind`)
-    if (account.label !== undefined && typeof account.label !== 'string') throw new KeytrError(`${where}.label must be a string`)
-    if (account.default !== undefined && typeof account.default !== 'boolean') throw new KeytrError(`${where}.default must be a boolean`)
-    if (account.default === true && ++defaults > 1) throw new KeytrError('At most one vault account can be the default')
-    if (account.kind === 'derived') {
-      if (vault.seed === undefined) throw new KeytrError('A derived account requires vault.seed')
-      if (!isPath(account.path)) throw new KeytrError(`${where}.path must be a BIP-32 path starting m/44'/1237'/`)
-    } else if (account.kind === 'key' && !isSecretHex(account.secret)) {
-      throw new KeytrError(`${where}.secret must be a valid 32-byte private key in lowercase hex`)
-    }
-  })
-  if (vault.ext !== undefined && (!isObject(vault.ext) || !Object.values(vault.ext).every(isObject))) {
-    throw new KeytrError('vault.ext must map namespaces to objects')
-  }
+  if (vault.updated_at !== undefined && (!Number.isSafeInteger(vault.updated_at) || vault.updated_at < 0)) throw new KeytrError('Invalid updated_at')
+  if (vault.ext !== undefined && !isObject(vault.ext)) throw new KeytrError('vault.ext must be an object')
 }
 
 export function validateNpkSecret(secret: NpkSecret): void {
@@ -126,6 +112,10 @@ export function encodeNpkSecret(secret: NpkSecret): Uint8Array {
     safeZero(plaintext)
     throw new KeytrError(`Stored record plaintext exceeds ${NPK_MAX_PLAINTEXT_BYTES} bytes`)
   }
+  if (secret.type !== 'key') {
+    try { strictJson(new TextDecoder('utf-8', { fatal: true, ignoreBOM: true }).decode(plaintext)) }
+    catch { safeZero(plaintext); throw new KeytrError('Stored record plaintext is not strict JSON') }
+  }
   return plaintext
 }
 
@@ -137,7 +127,7 @@ export function decodeNpkSecret(type: NpkType, plaintext: Uint8Array): NpkSecret
   } else {
     let value: any
     try {
-      value = JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(plaintext))
+      value = strictJson(new TextDecoder('utf-8', { fatal: true, ignoreBOM: true }).decode(plaintext))
     } catch {
       throw new KeytrError('Stored record plaintext is not valid UTF-8 JSON')
     }
@@ -154,11 +144,19 @@ export function deriveSeedKey(seed: NpkSeed, path: string = MAIN_PATH): NpkSecre
   safeZero(entropy)
   const root = HDKey.fromMasterSeed(bip39Seed)
   safeZero(bip39Seed)
-  const node = root.derive(path)
-  root.wipePrivateData()
-  const secretKey = node.privateKey!.slice()
-  node.wipePrivateData()
-  return { pubkey: getPublicKey(secretKey), secretKey, path }
+  let node = root
+  try {
+    for (const level of path.split('/').slice(1)) {
+      const index = parseInt(level, 10) + (level.endsWith("'") ? 0x80000000 : 0)
+      const child = node.deriveChild(index)
+      node.wipePrivateData()
+      node = child
+      if (child.index !== index) throw new KeytrError('The exact BIP-32 path is not usable')
+    }
+    const secretKey = node.privateKey!.slice()
+    return { pubkey: getPublicKey(secretKey), secretKey, path }
+  } finally { node.wipePrivateData() }
+
 }
 
 /**
@@ -172,8 +170,15 @@ export function npkSecretKeys(secret: NpkSecret): NpkSecretKey[] {
   if (secret.type === 'seed') return [deriveSeedKey(secret.seed)]
   const { seed, accounts } = secret.vault
   return accounts.flatMap(account => {
+    if (!isObject(account) || typeof account.kind !== 'string' ||
+      (account.label !== undefined && typeof account.label !== 'string') ||
+      (account.default !== undefined && typeof account.default !== 'boolean')) return []
+    if (account.kind === 'derived' && (!seed || !isPath(account.path))) return []
+    if (account.kind === 'key' && !isSecretHex(account.secret)) return []
     let key: NpkSecretKey
-    if (account.kind === 'derived') key = deriveSeedKey(seed!, account.path)
+    if (account.kind === 'derived') {
+      try { key = deriveSeedKey(seed!, account.path) } catch { return [] }
+    }
     else if (account.kind === 'key') {
       const secretKey = hexToBytes(account.secret!)
       key = { pubkey: getPublicKey(secretKey), secretKey }

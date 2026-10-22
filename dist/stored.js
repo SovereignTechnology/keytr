@@ -6,7 +6,7 @@
 import { finalizeEvent } from 'nostr-tools/pure';
 import { base64url } from '@scure/base';
 import { DEFAULT_RP_ID, KEYTR_VERSION, PRF_SALT } from './types.js';
-import { DecryptionError, KeytrError, PasskeyModeError } from './errors.js';
+import { KeytrError, PasskeyModeError } from './errors.js';
 import { registerStoredPasskey } from './webauthn/register.js';
 import { authenticatePrf, discoverStoredPasskey } from './webauthn/authenticate.js';
 import { classifyHandle } from './webauthn/handle.js';
@@ -14,10 +14,10 @@ import { decryptNpkRecord, encryptNpkRecord, NPK_STORE_PRF_INPUT } from './crypt
 import { decodeNpkSecret, encodeNpkSecret, npkSecretKeys } from './crypto/npk-secret.js';
 import { decryptNsec } from './crypto/decrypt.js';
 import { safeZero } from './crypto/builtins.js';
-import { buildNpkEvent, verifyNpkEvent } from './nostr/npk.js';
+import { buildNpkEvent, verifyNpkEvent, eligibleNpkEvent } from './nostr/npk.js';
 import { parseKeytrEvent } from './nostr/event.js';
 import { nsecToHexPubkey } from './nostr/keys.js';
-import { fetchKeytrEvents } from './nostr/relay.js';
+import { fetchKeytrEvents, fetchStoredEvents } from './nostr/relay.js';
 /** Throw unless `author` is one of the secret's importable keys. */
 function assertAuthor(secret, author) {
     const keys = npkSecretKeys(secret);
@@ -56,6 +56,8 @@ export function decryptStoredSecret(options) {
  * is published.
  */
 export async function setupStored(secret, options) {
+    if (secret.type === 'seed')
+        secret = { type: 'vault', vault: { seed: secret.seed, accounts: [{ kind: 'derived', path: "m/44'/1237'/0'/0/0" }] } };
     const plaintext = encodeNpkSecret(secret); // validates and checks the size before the prompt
     const keys = npkSecretKeys(secret);
     const chosen = keys.find(k => k.default) ?? keys[0];
@@ -106,7 +108,9 @@ export async function discoverStored(relays, options = {}) {
         if (handle.legacy === 'key-in-handle')
             throw new PasskeyModeError('unsupported', 'legacy key-in-handle passkey: use discover() and migrateFromKih()');
         const { author } = handle;
-        const events = await fetchKeytrEvents(author, relays, options.relayOptions);
+        const events = handle.legacy === 'raw-pubkey'
+            ? await fetchKeytrEvents(author, relays, options.relayOptions)
+            : await fetchStoredEvents(author, credentialId, relays, options.relayOptions);
         if (handle.legacy === 'raw-pubkey') {
             const d = base64url.encode(credentialId);
             const v1 = events.find(e => e.tags.some(t => t[0] === 'd' && t[1] === d) && e.tags.some(t => t[0] === 'v' && t[1] === String(KEYTR_VERSION)));
@@ -125,26 +129,34 @@ export async function discoverStored(relays, options = {}) {
                 safeZero(keyMaterial);
             }
         }
-        // Tagged stored: every candidate is signed by the author named in the handle.
-        let newest;
-        for (const event of events) {
+        // Select signed vault coordinates before decoding; a malformed latest vault must not roll back.
+        const eligible = events.flatMap(event => {
             try {
-                const { record } = verifyNpkEvent(event, { author, rpId, credentialId });
-                if (!newest || event.created_at > newest.created_at || (event.created_at === newest.created_at && event.id < newest.id))
-                    newest = { ...event, record };
+                return [{ event, type: eligibleNpkEvent(event, { author, rpId, credentialId }) }];
             }
-            catch { /* not a valid npk1 record for this passkey */ }
-        }
-        if (!newest)
+            catch {
+                return [];
+            }
+        }).sort((a, b) => b.event.created_at - a.event.created_at || a.event.id.localeCompare(b.event.id));
+        const newestVault = eligible.find(e => e.type === 'vault');
+        const candidates = [...(newestVault ? [newestVault] : []), ...eligible.filter(e => e.type !== 'vault')];
+        if (!candidates.length)
             throw new PasskeyModeError('record-not-found', `credential ${base64url.encode(credentialId)}`);
         const keyMaterial = prfOutput?.slice() ?? await authenticatePrf(auth, NPK_STORE_PRF_INPUT);
         try {
-            return { format: 'npk1', secret: decryptStoredSecret({ record: newest.record, keyMaterial, rpId, author, credentialId }), author, credentialId };
-        }
-        catch (err) {
-            throw err instanceof DecryptionError
-                ? new DecryptionError(`The newest stored record for this passkey does not decrypt; refusing to restore an older one (${err.message})`)
-                : err;
+            let failure;
+            const warnings = [];
+            for (const { event } of candidates) {
+                try {
+                    const { record } = verifyNpkEvent(event, { author, rpId, credentialId });
+                    return { format: 'npk1', secret: decryptStoredSecret({ record, keyMaterial, rpId, author, credentialId }), author, credentialId, warnings };
+                }
+                catch (err) {
+                    failure = err;
+                    warnings.push('A recovery copy could not be opened; check for possible tampering.');
+                }
+            }
+            throw failure;
         }
         finally {
             safeZero(keyMaterial);

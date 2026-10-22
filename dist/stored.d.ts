@@ -38,6 +38,8 @@ export interface StoredLoginResult {
     secret: NpkSecret;
     author: string;
     credentialId: Uint8Array;
+    /** Failed copies that a host must report when another copy recovers. */
+    warnings?: string[];
 }
 /**
  * Discoverable login that classifies the passkey's handle first:

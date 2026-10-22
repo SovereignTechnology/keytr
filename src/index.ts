@@ -255,9 +255,15 @@ export async function loginWithKeytr(events: {
   let lastError: Error | undefined
 
   for (const event of events) {
-    // Typed recovery (v4) and npk1 records are opt-in; do not parse their coordinates as an nsec ID.
-    if (event.tags.some(tag => tag[0] === 'v' && (tag[1] === '4' || tag[1] === 'npk1'))) continue
-    const parsed = _parseEvent(event)
+    if (event.kind !== 31777) continue
+    const versions = event.tags.filter(tag => tag[0] === 'v')
+    const version = versions[0]?.[1] ?? String(KEYTR_VERSION)
+    if (versions.length > 1 || (!strategy && version !== String(KEYTR_VERSION) && version !== String(KEYTR_KIH_VERSION))) {
+      lastError = new KeytrError(`Unsupported keytr event version ${version}`)
+      continue
+    }
+    let parsed: ReturnType<typeof _parseEvent>
+    try { parsed = _parseEvent(event) } catch (err) { lastError = err as Error; continue }
 
     // Choose the authenticate function by event version (or a custom override).
     let authenticate: (opts: {

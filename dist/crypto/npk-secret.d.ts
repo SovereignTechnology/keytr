@@ -24,7 +24,7 @@ export interface NpkAccount {
     path?: string;
     secret?: string;
     label?: string;
-    /** The account the user normally uses. At most one per vault. */
+    /** The account the user normally uses. The first usable default is selected. */
     default?: boolean;
     [field: string]: unknown;
 }
@@ -32,7 +32,7 @@ export interface NpkVault {
     seed?: NpkSeed;
     accounts: NpkAccount[];
     /** Application data keyed by reverse-DNS identifier */
-    ext?: Record<string, Record<string, unknown>>;
+    ext?: Record<string, unknown>;
     [field: string]: unknown;
 }
 export type NpkSecret = {

@@ -67,6 +67,7 @@ export type EncryptNpkRecordOptions = NpkRecordContext & { plaintext: Uint8Array
  * reusing an IV with the same key breaks AES-GCM. Not exported from the package.
  */
 export function encryptNpkRecordWith(options: EncryptNpkRecordOptions, hkdfSalt: Uint8Array, iv: Uint8Array): Uint8Array {
+  if (options.type === 'seed') throw new EncryptionError('Seed-only identities must be written as vaults')
   const aad = buildNpkAad(options)
   const { plaintext } = options
   if (!plaintext.length || plaintext.length > NPK_MAX_PLAINTEXT_BYTES) throw new EncryptionError(`Stored record plaintext must be 1 to ${NPK_MAX_PLAINTEXT_BYTES} bytes`)

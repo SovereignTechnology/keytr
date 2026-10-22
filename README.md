@@ -238,3 +238,7 @@ The legacy KiH mode stored the encryption key as a random 256-bit value inside `
 ## License
 
 AGPL-3.0-or-later
+
+### Provisional stored-key interoperability
+
+The opt-in stored-key APIs now write provisional kind 31778 without a version tag and read kind 31777 only for legacy recovery. Vault decoding and relay selection follow the split core/companion draft; see [the integration limits](docs/passkey-key-modes.md#vault-validation-and-integration-boundary). This local implementation does not establish provider synchronization or change the existing deployment.

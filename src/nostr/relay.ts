@@ -1,3 +1,5 @@
+import { base64urlnopad } from '@scure/base'
+import type { Filter } from 'nostr-tools/filter'
 import { Relay } from 'nostr-tools/relay'
 import type { Event } from 'nostr-tools/core'
 import { KEYTR_EVENT_KIND } from '../types.js'
@@ -52,11 +54,19 @@ export async function publishKeytrEvent(
 }
 
 /** Fetch all kind:31777 events for a given pubkey from relays */
-export async function fetchKeytrEvents(
-  pubkey: string,
-  relayUrls: string[],
-  options?: RelayOptions
-): Promise<Event[]> {
+export async function fetchKeytrEvents(pubkey: string, relayUrls: string[], options?: RelayOptions): Promise<Event[]> {
+  return fetchEvents([{ kinds: [KEYTR_EVENT_KIND], authors: [pubkey] }], relayUrls, options)
+}
+
+export async function fetchStoredEvents(pubkey: string, credentialId: Uint8Array, relayUrls: string[], options?: RelayOptions): Promise<Event[]> {
+  const id = base64urlnopad.encode(credentialId)
+  return fetchEvents([
+    { kinds: [31778], authors: [pubkey], '#d': [`${id}:key`, `${id}:vault`] },
+    { kinds: [KEYTR_EVENT_KIND], authors: [pubkey], '#d': [`${id}:key`, `${id}:vault`, `${id}:seed`] },
+  ], relayUrls, options)
+}
+
+async function fetchEvents(filters: Filter[], relayUrls: string[], options?: RelayOptions): Promise<Event[]> {
   const timeout = options?.timeout ?? 5000
 
   const results = await Promise.allSettled(
@@ -66,7 +76,7 @@ export async function fetchKeytrEvents(
         return await new Promise<Event[]>((resolve) => {
           const collected: Event[] = []
           const sub = relay.subscribe(
-            [{ kinds: [KEYTR_EVENT_KIND], authors: [pubkey] }],
+            filters,
             {
               onevent(evt) {
                 collected.push(evt)
