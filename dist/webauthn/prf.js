@@ -33,7 +33,7 @@ export function prfAuthenticationExtension(input = PRF_SALT) {
  */
 export function extractPrfOutput(extensionResults) {
     const prf = extensionResults?.prf;
-    if (!prf?.results?.first)
+    if (prf?.enabled === false || !prf?.results?.first)
         return null;
     return new Uint8Array(prf.results.first);
 }
@@ -42,6 +42,8 @@ export function extractPrfOutput(extensionResults) {
  */
 export function isPrfEnabled(extensionResults) {
     const prf = extensionResults?.prf;
+    if (prf?.enabled === false)
+        return false;
     // During registration, PRF support is indicated by `enabled: true`
     if (prf?.enabled === true)
         return true;

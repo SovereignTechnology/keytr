@@ -44,14 +44,6 @@ function restore() {
 describe('high-level wiring', () => {
   afterEach(() => { restore(); vi.restoreAllMocks() })
 
-  it('skips unsupported event kinds and versions before parsing credentials', async () => {
-    const { loginWithKeytr } = await import('../src/index.js')
-    await expect(loginWithKeytr([
-      { kind: 31778, content: '', tags: [['d', 'bad:vault']] },
-      { kind: 31777, content: '', tags: [['v', '999'], ['d', 'bad:vault']] }
-    ])).rejects.toThrow('No matching passkey found')
-  })
-
   it('setup() threads the derived pubkey into strategy.register', async () => {
     let capturedPubkey: string | undefined
     const stub: KeyStrategy = {

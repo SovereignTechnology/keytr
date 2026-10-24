@@ -1,8 +1,8 @@
 # Passkey-held Nostr keys (npk1)
 
-keytr can read and write the stored-mode format of the draft [Passkey-held Nostr keys](<SPEC_URL>) proposal, next to its own formats. The legacy login reader skips unsupported kinds and versions before parsing their credential coordinates. This does not migrate `setup()`, `discover()`, v1 events, the `keytr-v1` PRF input or the v4 [typed recovery](typed-recovery.md) payloads.
+keytr can read and write the stored-mode format of the draft [Passkey-held Nostr keys](https://github.com/nostr-wot/nips/blob/proposal/passkey-held-keys/XX.md) proposal, next to its own formats. The legacy login reader skips unsupported kinds and versions before parsing their credential coordinates. This does not migrate `setup()`, `discover()`, v1 events, the `keytr-v1` PRF input or the v4 [typed recovery](typed-recovery.md) payloads.
 
-The proposal names two ways a passkey can hold a Nostr identity. In derived mode the PRF output is the private key. In stored mode a separately created secret is encrypted with the PRF output. keytr has always been stored mode and never derives a key. New passkeys say which mode they use in their handle (`user.id`), so a client can refuse the other kind instead of creating an empty identity.
+The proposal names two ways a passkey can hold a Nostr identity. In derived mode the registered parameter set derives the private key from the PRF output; this draft uses HKDF, unlike legacy Nosskey direct mode. In stored mode a separately created secret is encrypted with the PRF output. keytr has always been stored mode and never derives a key. New passkeys say which mode they use in their handle (`user.id`), so a client can refuse the other kind instead of creating an empty identity.
 
 ## Format
 
@@ -27,7 +27,7 @@ The companion vault proposal defines the vault JSON. New seed-only writes use a 
 | other `"NPK"` handles | `unsupported` | refused |
 | anything else, or none | `unknown` | refused |
 
-Refusals are `PasskeyModeError` with a `reason` of `derived`, `unsupported`, `unknown` or `record-not-found`, and happen before any relay query. Derived parameter sets and the handles of other deployments are listed in the proposal's [registry](<REGISTRY_URL>). The v1 `detectMode()` also throws `PasskeyModeError` for tagged handles; 32 and 33-byte handles behave as before.
+Refusals are `PasskeyModeError` with a `reason` of `derived`, `unsupported`, `unknown` or `record-not-found`, and happen before any relay query. Derived parameter sets and deployment formats are described in the [core proposal](https://github.com/nostr-wot/nips/blob/proposal/passkey-held-keys/XX.md); seed/account schemas are in its [vault companion](https://github.com/nostr-wot/nips/blob/proposal/passkey-held-keys/YY.md). The v1 `detectMode()` also throws `PasskeyModeError` for tagged handles; 32 and 33-byte handles behave as before.
 
 ## Usage
 
@@ -59,3 +59,7 @@ The proposal's default is for each application to use its own RP ID and import a
 The decoder rejects duplicate JSON member names, invalid UTF-8, malformed top-level fields and non-digit or out-of-range `updated_at` values. It retains unknown fields, skips unusable accounts, derives only the exact specified BIP-32 path, and chooses the first usable default account. The authenticated author must belong to a usable account.
 
 `discoverStored()` is relay-only. A host that adds provider storage must compare its authenticated vault against the newest eligible relay vault using `updated_at`, prefer usable vaults over immutable key records, and report failed copies without rolling back to older relay vaults. These changes do not establish cross-device provider synchronization or migrate existing deployments.
+
+## Existing Nosskey accounts
+
+Nosskey already supports direct PRF-derived keys and NIP-44 wrapped keys. Its random credential handles do not reveal which mode an account uses. These keytr APIs do not reinterpret those handles or accept Nosskey wrapping as a stored-record payload. A host importing a Nosskey account must use its explicitly selected original account metadata, original PRF input and wrapping format, verify the recovered public key, and ask before enrolling the same identity under a new keytr credential. The original recovery route remains available until the replacement is verified. This preserves the distinction between signing through a Nosskey provider and importing a private key.

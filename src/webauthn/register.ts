@@ -114,6 +114,10 @@ async function createPrfPasskey(
   const response = cred.response as AuthenticatorAttestationResponse
   const extensionResults = cred.getClientExtensionResults()
 
+  if ((extensionResults as any)?.prf?.enabled === false) {
+    throw new PrfNotSupportedError('PRF is disabled for this credential')
+  }
+
   let keyMaterial = extractPrfOutput(extensionResults)
 
   // Some authenticators (e.g. YubiKey) report prf.enabled=true during

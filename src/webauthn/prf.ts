@@ -38,7 +38,7 @@ export function extractPrfOutput(
   extensionResults: AuthenticationExtensionsClientOutputs
 ): Uint8Array | null {
   const prf = (extensionResults as any)?.prf
-  if (!prf?.results?.first) return null
+  if (prf?.enabled === false || !prf?.results?.first) return null
   return new Uint8Array(prf.results.first)
 }
 
@@ -49,6 +49,7 @@ export function isPrfEnabled(
   extensionResults: AuthenticationExtensionsClientOutputs
 ): boolean {
   const prf = (extensionResults as any)?.prf
+  if (prf?.enabled === false) return false
   // During registration, PRF support is indicated by `enabled: true`
   if (prf?.enabled === true) return true
   // Or by successfully returning results

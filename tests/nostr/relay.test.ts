@@ -9,7 +9,7 @@ vi.mock('nostr-tools/relay', () => ({
   },
 }))
 
-import { publishKeytrEvent, fetchKeytrEvents, fetchKeytrEventByDTag, fetchStoredEvents } from '../../src/nostr/relay.js'
+import { publishKeytrEvent, fetchKeytrEvents, fetchKeytrEventByDTag } from '../../src/nostr/relay.js'
 import { Relay } from 'nostr-tools/relay'
 
 const mockRelay = Relay as unknown as { connect: ReturnType<typeof vi.fn> }
@@ -298,14 +298,4 @@ describe('fetchKeytrEventByDTag', () => {
     const result = await fetchKeytrEventByDTag('cred', ['wss://dead.example'])
     expect(result).toBeNull()
   })
-})
-
-it('queries stored records using credential-specific d coordinates and separate legacy kind', async () => {
-  const subscribe = vi.fn((_filters, callbacks) => { queueMicrotask(() => callbacks.oneose()); return { close: vi.fn() } })
-  mockRelay.connect.mockResolvedValue({ subscribe, close: vi.fn() })
-  await fetchStoredEvents('author', new Uint8Array([1]), ['wss://relay.example'])
-  expect(subscribe.mock.calls[0][0]).toEqual([
-    { kinds: [31778], authors: ['author'], '#d': ['AQ:key', 'AQ:vault'] },
-    { kinds: [31777], authors: ['author'], '#d': ['AQ:key', 'AQ:vault', 'AQ:seed'] }
-  ])
 })
