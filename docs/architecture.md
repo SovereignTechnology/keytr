@@ -492,7 +492,7 @@ There is no single gateway. Anyone can run one:
 
 | Gateway | Operator | Authorized Origins |
 |---------|----------|--------------------|
-| `keytr.org` | sovIT | primal.net, coracle.social, ... |
+| `keytr.org` | Sovereign Technology | primal.net, coracle.social, ... |
 | `passkey.nostr.com` | Community X | nostrudel.ninja, snort.social, ... |
 | `keys.example.org` | Self-hosted | personal-client.example.org |
 
@@ -546,7 +546,7 @@ To authorize a new Nostr client to use a gateway's passkeys:
 2. Deploy the updated file
 3. The client can now call WebAuthn with the gateway's rpId
 
-For the official gateways, submit a PR to [sovITxyz/keytr.org](https://github.com/sovITxyz/keytr.org) or [nostkey/nostkey.org](https://github.com/nostkey/nostkey.org).
+For the official gateways, submit a PR to [SovereignTechnology/keytr.org](https://github.com/SovereignTechnology/keytr.org) or [nostkey/nostkey.org](https://github.com/nostkey/nostkey.org).
 
 ### Standalone Mode
 
@@ -592,7 +592,7 @@ The authenticator doesn't know or care whether `"keytr.org"` resolves in DNS. It
 
 ### nostr-swarm Integration
 
-[nostr-swarm](https://github.com/sovITxyz/nostr-swarm) is a fully P2P Nostr relay built on the Holepunch stack (Hyperswarm + Autobase + Hyperbee). It provides two access modes:
+[nostr-swarm](https://github.com/SovereignTechnology/nostr-swarm) is a fully P2P Nostr relay built on the Holepunch stack (Hyperswarm + Autobase + Hyperbee). It provides two access modes:
 
 - **WebSocket**: Traditional Nostr clients connect via NIP-01 WebSocket
 - **Hyperswarm direct**: Pear apps join the swarm topic and replicate the Autobase directly — no HTTP, no DNS, no WebSocket overhead

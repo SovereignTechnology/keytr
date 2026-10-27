@@ -46,12 +46,12 @@
     "encryption",
     "prf"
   ],
-  "author": "sovITxyz",
+  "author": "Sovereign Technology (https://www.sovtech.pro/)",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/sovITxyz/keytr.git"
+    "url": "git+https://github.com/SovereignTechnology/keytr.git"
   },
-  "homepage": "https://github.com/sovITxyz/keytr",
+  "homepage": "https://github.com/SovereignTechnology/keytr",
   "license": "AGPL-3.0-or-later",
   "dependencies": {
     "@noble/ciphers": "2.1.1",

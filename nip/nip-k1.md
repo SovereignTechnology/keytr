@@ -362,8 +362,8 @@ The model is **federated**: there is no single canonical gateway. Multiple indep
 
 | Gateway | Operator | Hosting | Authorized Origins |
 |---------|----------|---------|-------------------|
-| `keytr.org` | sovIT | Cloudflare Pages | nostkey.org, bies.sovit.xyz, gitvid.sovit.xyz, nostrbook.net |
-| `nostkey.org` | sovIT | Hostinger | keytr.org, bies.sovit.xyz, gitvid.sovit.xyz, nostrbook.net |
+| `keytr.org` | Sovereign Technology | Cloudflare Pages | nostkey.org, bies.sovit.xyz, gitvid.sovit.xyz, nostrbook.net |
+| `nostkey.org` | Sovereign Technology | Hostinger | keytr.org, bies.sovit.xyz, gitvid.sovit.xyz, nostrbook.net |
 | `keys.example.org` | Self-hosted | Any | personal-client.example.org |
 
 Users can register passkeys against **multiple gateways**, producing separate kind:31777 events for each. Losing access to one gateway does not affect events encrypted under other rpIds.

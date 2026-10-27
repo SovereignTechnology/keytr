@@ -10,8 +10,8 @@
 ## Reporting a vulnerability
 
 Please report security issues privately via **GitHub Security Advisories**
-(<https://github.com/sovITxyz/keytr/security/advisories/new>) or by email to
-**security@sovit.xyz**. Do not open a public issue for undisclosed
+(<https://github.com/SovereignTechnology/keytr/security/advisories/new>) or by email to
+**services@sovtech.pro**. Do not open a public issue for undisclosed
 vulnerabilities. We aim to acknowledge reports within 72 hours.
 
 Because keytr encrypts Nostr private keys, please include the affected version,

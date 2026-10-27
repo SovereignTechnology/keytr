@@ -2,7 +2,7 @@
 
 How to wire keytr into a Nostr client's auth flow, session restore, and credential management. This guide covers the recommended patterns for production use — fast login, graceful fallbacks, and credential indexing that improves over time.
 
-The canonical implementation of these patterns is [BIES's keytrService.js](https://github.com/sovITxyz/BIES/blob/main/src/services/keytrService.js).
+The canonical implementation of these patterns is [BIES's keytrService.js](https://github.com/Build-in-El-Salvador/BIES-app/blob/main/src/services/keytrService.js).
 
 ---
 
