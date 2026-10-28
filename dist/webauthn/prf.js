@@ -2,13 +2,13 @@ import { PRF_SALT } from '../types.js';
 /**
  * Build the PRF extension input for credential creation (registration).
  * During registration, we use `eval` to test if PRF is supported
- * and get the first PRF output.
+ * and get the first PRF output. `input` defaults to keytr's "keytr-v1".
  */
-export function prfRegistrationExtension() {
+export function prfRegistrationExtension(input = PRF_SALT) {
     return {
         prf: {
             eval: {
-                first: PRF_SALT.buffer,
+                first: input.slice().buffer,
             },
         },
     };
@@ -16,13 +16,13 @@ export function prfRegistrationExtension() {
 /**
  * Build the PRF extension input for credential assertion (authentication).
  * During authentication, we use `eval` to get the PRF output
- * for deriving the encryption/decryption key.
+ * for deriving the encryption/decryption key. `input` defaults to "keytr-v1".
  */
-export function prfAuthenticationExtension() {
+export function prfAuthenticationExtension(input = PRF_SALT) {
     return {
         prf: {
             eval: {
-                first: PRF_SALT.buffer,
+                first: input.slice().buffer,
             },
         },
     };
@@ -33,7 +33,7 @@ export function prfAuthenticationExtension() {
  */
 export function extractPrfOutput(extensionResults) {
     const prf = extensionResults?.prf;
-    if (!prf?.results?.first)
+    if (prf?.enabled === false || !prf?.results?.first)
         return null;
     return new Uint8Array(prf.results.first);
 }
@@ -42,6 +42,8 @@ export function extractPrfOutput(extensionResults) {
  */
 export function isPrfEnabled(extensionResults) {
     const prf = extensionResults?.prf;
+    if (prf?.enabled === false)
+        return false;
     // During registration, PRF support is indicated by `enabled: true`
     if (prf?.enabled === true)
         return true;

@@ -1,3 +1,4 @@
+import { base64urlnopad } from '@scure/base';
 import { Relay } from 'nostr-tools/relay';
 import { KEYTR_EVENT_KIND } from '../types.js';
 import { RelayError } from '../errors.js';
@@ -31,13 +32,23 @@ export async function publishKeytrEvent(event, relayUrls, options) {
 }
 /** Fetch all kind:31777 events for a given pubkey from relays */
 export async function fetchKeytrEvents(pubkey, relayUrls, options) {
+    return fetchEvents([{ kinds: [KEYTR_EVENT_KIND], authors: [pubkey] }], relayUrls, options);
+}
+export async function fetchStoredEvents(pubkey, credentialId, relayUrls, options) {
+    const id = base64urlnopad.encode(credentialId);
+    return fetchEvents([
+        { kinds: [31778], authors: [pubkey], '#d': [`${id}:key`, `${id}:vault`] },
+        { kinds: [KEYTR_EVENT_KIND], authors: [pubkey], '#d': [`${id}:key`, `${id}:vault`, `${id}:seed`] },
+    ], relayUrls, options);
+}
+async function fetchEvents(filters, relayUrls, options) {
     const timeout = options?.timeout ?? 5000;
     const results = await Promise.allSettled(relayUrls.map(async (url) => {
         const relay = await connectWithTimeout(url, timeout);
         try {
             return await new Promise((resolve) => {
                 const collected = [];
-                const sub = relay.subscribe([{ kinds: [KEYTR_EVENT_KIND], authors: [pubkey] }], {
+                const sub = relay.subscribe(filters, {
                     onevent(evt) {
                         collected.push(evt);
                     },

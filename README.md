@@ -25,6 +25,14 @@ Cross-client login works via a [federated gateway model](docs/architecture.md#fe
 - [Roadmap](docs/roadmap.md) — current state and future direction
 - [NIP-K1 Specification](NIP-K1.md) — the canonical protocol spec (PRF `v=1` is the only specified mode; legacy KiH `v=3` retained decrypt-only for migration)
 
+## Typed recovery (draft)
+
+Applications can use the proposed `setupPayload`, `unlockPayload` and `discoverPayload` APIs to transport an encrypted seed or multi-account vault. Existing private-key flows stay unchanged. Payload types and application schemas are authenticated; applications must agree on a schema to restore each other’s data. See the [wire format and integration examples](docs/typed-recovery.md).
+
+## Passkey-held Nostr keys (draft)
+
+`setupStored()` and `discoverStored()` read and write the stored-mode format of the [Passkey-held Nostr keys](<SPEC_URL>) proposal (`npk1`): tagged handles and records holding a key, a seed or a vault. Passkeys that derive their key directly, or that keytr cannot identify, are refused with `PasskeyModeError` instead of becoming a new empty identity. See [Passkey key modes](docs/passkey-key-modes.md).
+
 ## Install
 
 ```bash
@@ -230,3 +238,7 @@ The legacy KiH mode stored the encryption key as a random 256-bit value inside `
 ## License
 
 AGPL-3.0-or-later
+
+### Provisional stored-key interoperability
+
+The opt-in stored-key APIs now write provisional kind 31778 without a version tag and read kind 31777 only for legacy recovery. Vault decoding and relay selection follow the split core/companion draft; see [the integration limits](docs/passkey-key-modes.md#vault-validation-and-integration-boundary). This local implementation does not establish provider synchronization or change the existing deployment.

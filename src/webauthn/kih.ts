@@ -5,7 +5,8 @@ import {
   PRF_USER_ID_SIZE,
   type KeytrMode,
 } from '../types.js'
-import { KeytrError } from '../errors.js'
+import { KeytrError, PasskeyModeError } from '../errors.js'
+import { classifyHandle } from './handle.js'
 import { safeSlice } from '../crypto/builtins.js'
 
 /**
@@ -22,6 +23,7 @@ import { safeSlice } from '../crypto/builtins.js'
  * Detect whether a userHandle represents a PRF or legacy KiH credential.
  * - 32 bytes → PRF (userHandle is the raw pubkey)
  * - 33 bytes with byte[0] === 0x03 → KiH (userHandle is [0x03 || key])
+ * - tagged "NPK" handles throw a PasskeyModeError (see handle.ts)
  */
 export function detectMode(userHandle: Uint8Array): KeytrMode {
   if (userHandle.length === KIH_USER_ID_SIZE && userHandle[0] === KIH_MODE_BYTE) {
@@ -30,6 +32,12 @@ export function detectMode(userHandle: Uint8Array): KeytrMode {
   if (userHandle.length === PRF_USER_ID_SIZE) {
     return 'prf'
   }
+
+  // Tagged handles (passkey-held Nostr keys) are never PRF or KiH credentials.
+  const tagged = classifyHandle(userHandle)
+  if (tagged.mode === 'derived') throw new PasskeyModeError('derived')
+  if (tagged.mode === 'unsupported') throw new PasskeyModeError('unsupported')
+  if (tagged.mode === 'stored') throw new PasskeyModeError('unsupported', 'tagged stored passkey: open it with discoverStored()')
 
   // Truncation detection: if shorter than expected, the authenticator likely truncated user.id
   if (userHandle.length < PRF_USER_ID_SIZE) {

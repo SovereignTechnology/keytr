@@ -318,3 +318,11 @@ Clients SHOULD support the gateway model for interoperability. Using a standalon
 Clients MAY display backup eligibility and backup state flags from the authenticator to inform users whether their passkey is synced across devices.
 
 Clients SHOULD NOT store the decrypted private key persistently. The intended flow is to decrypt on demand via a biometric prompt each time the key is needed (e.g., to sign events).
+
+## Proposed typed recovery extension
+
+An opt-in [typed seed and vault recovery proposal](docs/typed-recovery.md) adds PRF payload version 4, explicit type/schema metadata and bounded variable-length ciphertext. It leaves the existing v1 private-key format unchanged. Typed payloads use separate addressable coordinates and dedicated APIs; clients that only implement v1 must not interpret them as private keys. This is a draft extension, not a claim of deployed cross-client support.
+
+## Passkey-held Nostr keys
+
+The [Passkey-held Nostr keys](<SPEC_URL>) proposal treats this NIP's v1 records and 32-byte handles as a legacy stored format and adds tagged handles and an `npk1` record. keytr supports both without changing this document; see [Passkey key modes](docs/passkey-key-modes.md).

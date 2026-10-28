@@ -1,7 +1,9 @@
 import { randomBytes, hexToBytes } from '@noble/hashes/utils.js'
 import { base64url } from '@scure/base'
 import type { KeytrCredential, RegisterOptions, RegisterResult } from '../types.js'
-import { DEFAULT_RP_ID, DEFAULT_RP_NAME, PRF_USER_ID_SIZE } from '../types.js'
+import { DEFAULT_RP_ID, DEFAULT_RP_NAME, PRF_SALT, PRF_USER_ID_SIZE } from '../types.js'
+import { NPK_STORE_PRF_INPUT } from '../crypto/npk.js'
+import { buildStoredHandle } from './handle.js'
 import { WebAuthnError, PrfNotSupportedError } from '../errors.js'
 import { prfRegistrationExtension, prfAuthenticationExtension, extractPrfOutput } from './prf.js'
 import { signalUnknownCredential } from './signal.js'
@@ -30,9 +32,7 @@ export async function registerPasskey(
 ): Promise<RegisterResult> {
   ensureBrowser()
 
-  const rpId = options.rpId ?? DEFAULT_RP_ID
-  const rpName = options.rpName ?? DEFAULT_RP_NAME
-  const { userName, userDisplayName, pubkey } = options
+  const { pubkey } = options
 
   if (typeof pubkey !== 'string' || !/^[0-9a-fA-F]{64}$/.test(pubkey)) {
     throw new WebAuthnError(
@@ -43,6 +43,29 @@ export async function registerPasskey(
   if (userId.length !== PRF_USER_ID_SIZE) {
     throw new WebAuthnError(`pubkey must be ${PRF_USER_ID_SIZE} bytes, got ${userId.length}`)
   }
+
+  return createPrfPasskey(options, userId, PRF_SALT)
+}
+
+/**
+ * Register a passkey with a tagged stored handle ("NPK" || 0x01 || 0x02 || author)
+ * and evaluate the PRF with the stored-mode input SHA-256("nostr-passkey:store:v1").
+ * The output is for an npk1 record and unrelated to the "keytr-v1" output.
+ */
+export async function registerStoredPasskey(options: Omit<RegisterOptions, 'pubkey'> & { author: string }): Promise<RegisterResult> {
+  ensureBrowser()
+  const userId = buildStoredHandle(options.author)
+  return createPrfPasskey(options, userId, NPK_STORE_PRF_INPUT)
+}
+
+async function createPrfPasskey(
+  options: Omit<RegisterOptions, 'pubkey'>,
+  userId: Uint8Array,
+  prfInput: Uint8Array
+): Promise<RegisterResult> {
+  const rpId = options.rpId ?? DEFAULT_RP_ID
+  const rpName = options.rpName ?? DEFAULT_RP_NAME
+  const { userName, userDisplayName } = options
 
   const create = nativeCreate ?? navigator.credentials.create.bind(navigator.credentials)
   const get = nativeGet ?? navigator.credentials.get.bind(navigator.credentials)
@@ -68,7 +91,7 @@ export async function registerPasskey(
       userVerification: 'required',
     },
     timeout: options.timeout ?? 120000,
-    extensions: prfRegistrationExtension(),
+    extensions: prfRegistrationExtension(prfInput),
   }
 
   // WebAuthn Level 3 hints for authenticator routing
@@ -91,6 +114,10 @@ export async function registerPasskey(
   const response = cred.response as AuthenticatorAttestationResponse
   const extensionResults = cred.getClientExtensionResults()
 
+  if ((extensionResults as any)?.prf?.enabled === false) {
+    throw new PrfNotSupportedError('PRF is disabled for this credential')
+  }
+
   let keyMaterial = extractPrfOutput(extensionResults)
 
   // Some authenticators (e.g. YubiKey) report prf.enabled=true during
@@ -111,7 +138,7 @@ export async function registerPasskey(
         ],
         userVerification: 'required',
         timeout: options.timeout ?? 120000,
-        extensions: prfAuthenticationExtension(),
+        extensions: prfAuthenticationExtension(prfInput),
       },
     }
 

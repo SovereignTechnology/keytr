@@ -58,4 +58,22 @@ export class RelayError extends KeytrError {
         this.name = 'RelayError';
     }
 }
+/**
+ * A passkey keytr refuses after classifying its handle (passkey-held Nostr
+ * keys proposal). keytr only reads and writes stored mode, so it never
+ * computes a key from these passkeys or turns them into a new identity.
+ */
+export class PasskeyModeError extends KeytrError {
+    reason;
+    constructor(reason, detail) {
+        super({
+            derived: 'This passkey derives its Nostr key directly and was made by a different app. Log in with the app that created it',
+            unsupported: 'This passkey was made by a newer or different app and cannot be used here',
+            unknown: 'No keytr record was found for this passkey, and its handle does not say how it holds its key',
+            'record-not-found': 'This passkey stores an encrypted key, but its record could not be found on the given relays',
+        }[reason] + (detail ? ` (${detail}).` : '.'));
+        this.reason = reason;
+        this.name = 'PasskeyModeError';
+    }
+}
 //# sourceMappingURL=errors.js.map

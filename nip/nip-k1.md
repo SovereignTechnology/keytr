@@ -491,3 +491,7 @@ The passkey-based key management approach described in this NIP was inspired by 
 | NIP-07 | Browser extension signers can integrate NIP-K1 for key import/export |
 | NIP-46 | Alternative approach: NIP-46 delegates signing to a remote signer; NIP-K1 stores keys locally |
 | NIP-49 | Can be used as a complementary backup method (password-encrypted nsec for offline storage) |
+
+## Proposed typed recovery extension
+
+An opt-in [typed seed and vault recovery proposal](../docs/typed-recovery.md) adds PRF payload version 4, explicit type/schema metadata and bounded variable-length ciphertext. It leaves the existing v1 private-key format unchanged. Typed payloads use separate addressable coordinates and dedicated APIs; clients that only implement v1 must not interpret them as private keys. This is a draft extension, not a claim of deployed cross-client support.

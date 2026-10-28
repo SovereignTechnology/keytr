@@ -1,6 +1,6 @@
 export { KEYTR_VERSION, KEYTR_KIH_VERSION, BLOB_VERSION, KEYTR_EVENT_KIND, DELETION_EVENT_KIND, DEFAULT_RP_ID, DEFAULT_RP_NAME, KEYTR_GATEWAYS, KIH_KEY_SIZE, KIH_USER_ID_SIZE, KIH_MODE_BYTE, PRF_USER_ID_SIZE, } from './types.js';
 // Errors
-export { KeytrError, PrfNotSupportedError, KihRegistrationDisabledError, EncryptionError, DecryptionError, BlobParseError, WebAuthnError, RelayError, } from './errors.js';
+export { KeytrError, PrfNotSupportedError, KihRegistrationDisabledError, EncryptionError, DecryptionError, BlobParseError, WebAuthnError, RelayError, PasskeyModeError, } from './errors.js';
 // Crypto
 export { encryptNsec, buildAad } from './crypto/encrypt.js';
 export { decryptNsec } from './crypto/decrypt.js';
@@ -148,7 +148,22 @@ export async function loginWithKeytr(events, strategy) {
     }
     let lastError;
     for (const event of events) {
-        const parsed = _parseEvent(event);
+        if (event.kind !== 31777)
+            continue;
+        const versions = event.tags.filter(tag => tag[0] === 'v');
+        const version = versions[0]?.[1] ?? String(KEYTR_VERSION);
+        if (versions.length > 1 || (!strategy && version !== String(KEYTR_VERSION) && version !== String(KEYTR_KIH_VERSION))) {
+            lastError = new KeytrError(`Unsupported keytr event version ${version}`);
+            continue;
+        }
+        let parsed;
+        try {
+            parsed = _parseEvent(event);
+        }
+        catch (err) {
+            lastError = err;
+            continue;
+        }
         // Choose the authenticate function by event version (or a custom override).
         let authenticate;
         if (strategy) {
@@ -297,4 +312,13 @@ export async function discover(relays, options) {
         safeZero(result.keyMaterial);
     }
 }
+// Draft typed PRF recovery: explicit APIs leave the existing nsec flows unchanged.
+export { encryptPayload, decryptPayload, PAYLOAD_VERSION, MAX_PAYLOAD_BYTES } from './crypto/payload.js';
+export { buildPayloadEvent, parsePayloadEvent, verifyPayloadEvent, payloadDTag } from './nostr/payload.js';
+export { setupPayload, unlockPayload, discoverPayload } from './payload.js';
+// Passkey-held Nostr keys (npk1 stored records, tagged handles): opt-in APIs next to v1.
+export { classifyHandle } from './webauthn/handle.js';
+export { NPK_STORE_PRF_INPUT } from './crypto/npk.js';
+export { npkSecretKeys } from './crypto/npk-secret.js';
+export { setupStored, discoverStored, decryptStoredSecret } from './stored.js';
 //# sourceMappingURL=index.js.map

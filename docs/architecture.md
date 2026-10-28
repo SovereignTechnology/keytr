@@ -560,6 +560,8 @@ A client can skip gateways entirely and use its own domain as the rpId. Only tha
 
 Related Origin Requests mean a single passkey on `keytr.org` already works from `nostkey.org` for day-to-day use. The backup gateway is for resilience — if `keytr.org` goes down, the browser can't fetch its `.well-known/webauthn`, so a separate credential on `nostkey.org` keeps the user's key accessible.
 
+This matches the gateway rules of the [Passkey-held Nostr keys](passkey-key-modes.md#gateways) proposal: browsers only have to accept 5 registrable domains in `/.well-known/webauthn`, every listed origin can obtain the PRF output of any passkey for the gateway's RP ID (so adding one is a trust decision), and stored mode, which keytr uses, is the recommended mode on a gateway.
+
 ---
 
 ## Native & P2P Clients (No DNS)
@@ -871,3 +873,11 @@ src/
 ```
 
 (KiH registration was removed — there is no `register-kih.ts`.)
+
+## Typed recovery extension
+
+The opt-in [typed recovery layer](typed-recovery.md) reuses PRF registration, authentication and relay transport. Dedicated payload crypto uses version 4, a separate HKDF context and context-bound AAD. Separate event coordinates preserve v1 private-key records. Application serialization and import remain outside the library.
+
+## Passkey-held Nostr keys (npk1)
+
+The opt-in [stored-mode layer](passkey-key-modes.md) adds handle classification (`src/webauthn/handle.ts`), the npk1 record and its secrets (`src/crypto/npk.ts`, `src/crypto/npk-secret.ts`), npk1 events (`src/nostr/npk.ts`) and the `setupStored`/`discoverStored` flows (`src/stored.ts`). It reuses keytr's PRF registration, targeted assertion and relay code with its own PRF input.

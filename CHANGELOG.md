@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased
+
+- Add draft PRF-encrypted seed/vault payload APIs with authenticated type/schema metadata and separate event coordinates, preserving existing single-key recovery.
+- Add opt-in support for the Passkey-held Nostr keys proposal: `classifyHandle`, `setupStored`, `discoverStored` and `npk1` key/seed/vault records. Derived, unsupported and unidentified passkeys are refused with `PasskeyModeError`. v1, legacy KiH and v4 formats are unchanged. Adds `@scure/bip39` and `@scure/bip32` as direct dependencies (already used through nostr-tools).
+
 All notable changes to this project will be documented in this file.
 
 This project follows [Semantic Versioning](https://semver.org/).
