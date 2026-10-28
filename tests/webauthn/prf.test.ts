@@ -25,6 +25,12 @@ describe('prf extension builders', () => {
 })
 
 describe('extractPrfOutput', () => {
+  it('refuses output when PRF is explicitly disabled', () => {
+    const result = { prf: { enabled: false, results: { first: new ArrayBuffer(32) } } } as any
+    expect(extractPrfOutput(result)).toBeNull()
+    expect(isPrfEnabled(result)).toBe(false)
+  })
+
   it('returns null when there is no prf extension result', () => {
     expect(extractPrfOutput({} as any)).toBeNull()
   })
